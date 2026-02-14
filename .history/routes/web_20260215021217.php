@@ -34,7 +34,6 @@ Route::view('/landing-page','pages.landing')->name('landing');
 Route::view('/frontend-design','pages.frontend')->name('frontend');
 
 // Settings group
-Route::redirect('/settings', '/settings/general')->name('settings');
 Route::view('/settings/general','pages.settings.general')->name('settings.general');
 Route::view('/settings/users','pages.settings.users')->name('settings.users');
 Route::view('/settings/contact','pages.settings.contact')->name('settings.contact');
