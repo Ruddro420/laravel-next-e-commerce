@@ -173,7 +173,7 @@ $openSettings = $is('settings.*');
                 </div>
             </a>
 
-            <a href="{{ route('crm.customers') }}" class="{{ $baseChild }} {{ $is('crm.customers') ? $activeChild : $idleChild }}">
+            <a href="{{ route('customers') }}" class="{{ $baseChild }} {{ $is('crm.customers') ? $activeChild : $idleChild }}">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] leading-none opacity-70">remove</span>
                     <div>Customers</div>

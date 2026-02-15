@@ -1,0 +1,351 @@
+@extends('layouts.app')
+@section('title','Category')
+@section('subtitle','Products')
+@section('pageTitle','Category Management')
+@section('pageDesc','Create, edit and manage product categories.')
+
+@section('content')
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+
+  {{-- ADD CATEGORY --}}
+  <div class="xl:col-span-1">
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:bg-slate-900 dark:border-slate-800">
+      <h2 class="text-lg font-semibold">Add Category</h2>
+      <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Name, slug, description and image.</p>
+
+      @if(session('success'))
+        <div class="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+          {{ session('success') }}
+        </div>
+      @endif
+
+      @if($errors->any())
+        <div class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+          <div class="font-semibold mb-1">Please fix:</div>
+          <ul class="list-disc pl-5 space-y-1">
+            @foreach($errors->all() as $err) <li>{{ $err }}</li> @endforeach
+          </ul>
+        </div>
+      @endif
+
+      <form class="mt-4 space-y-4" method="POST" action="{{ route('products.categories.store') }}" enctype="multipart/form-data">
+        @csrf
+
+        <div>
+          <label class="text-sm font-semibold text-slate-700 dark:text-slate-200">Name</label>
+          <input id="catName" name="name" value="{{ old('name') }}"
+            class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"
+            placeholder="e.g. Men's Fashion" />
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-slate-700 dark:text-slate-200">Slug</label>
+          <input id="catSlug" name="slug" value="{{ old('slug') }}"
+            class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"
+            placeholder="leave empty to auto-generate" />
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-slate-700 dark:text-slate-200">Description</label>
+          <textarea name="description" rows="4"
+            class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"
+            placeholder="Short description...">{{ old('description') }}</textarea>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-slate-700 dark:text-slate-200">Image</label>
+          <div class="mt-2 rounded-2xl border border-dashed border-slate-300 p-4 dark:border-slate-700">
+            <input id="catImage" type="file" name="image" accept="image/*"
+              class="block w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-200 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200 dark:hover:file:bg-slate-700" />
+
+            <div id="imgPreviewWrap" class="hidden mt-4">
+              <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Preview</div>
+              <img id="imgPreview" class="h-28 w-full rounded-2xl object-cover border border-slate-200 dark:border-slate-800" alt="Preview">
+            </div>
+          </div>
+        </div>
+
+        <button type="submit"
+          class="w-full rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+          Save Category
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {{-- LIST + SEARCH + PAGINATION --}}
+  <div class="xl:col-span-2">
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:bg-slate-900 dark:border-slate-800">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">All Categories</h2>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Edit / delete with confirmation.</p>
+        </div>
+
+        <form method="GET" action="{{ route('products.categories') }}" class="flex gap-2">
+          <input name="q" value="{{ $q ?? '' }}"
+            class="w-full sm:w-72 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"
+            placeholder="Search name or slug..." />
+          <button class="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800">
+            Search
+          </button>
+        </form>
+      </div>
+
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <th class="py-3 pr-3">Image</th>
+              <th class="py-3 pr-3">Name</th>
+              <th class="py-3 pr-3">Slug</th>
+              <th class="py-3 pr-3">Description</th>
+              <th class="py-3 pr-3">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @forelse($categories as $c)
+              <tr class="border-t border-slate-100 dark:border-slate-800">
+                <td class="py-3 pr-3">
+                  @if($c->image_path)
+                    <img class="h-10 w-10 rounded-xl object-cover border border-slate-200 dark:border-slate-800"
+                         src="{{ asset('storage/'.$c->image_path) }}" alt="{{ $c->name }}">
+                  @else
+                    <div class="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-800"></div>
+                  @endif
+                </td>
+
+                <td class="py-3 pr-3 font-semibold text-slate-800 dark:text-slate-100">{{ $c->name }}</td>
+                <td class="py-3 pr-3 text-slate-600 dark:text-slate-300">{{ $c->slug }}</td>
+                <td class="py-3 pr-3 text-slate-600 dark:text-slate-300">
+                  <div class="line-clamp-2 max-w-[26rem]">{{ $c->description }}</div>
+                </td>
+
+                <td class="py-3 pr-3">
+                  <div class="flex items-center gap-2">
+                    <button type="button"
+                      class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800"
+                      data-edit-btn
+                      data-id="{{ $c->id }}"
+                      data-name="{{ e($c->name) }}"
+                      data-slug="{{ e($c->slug) }}"
+                      data-description="{{ e($c->description ?? '') }}"
+                    >
+                      Edit
+                    </button>
+
+                    <button type="button"
+                      class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"
+                      data-delete-btn
+                      data-id="{{ $c->id }}"
+                      data-name="{{ e($c->name) }}"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            @empty
+              <tr class="border-t border-slate-100 dark:border-slate-800">
+                <td colspan="5" class="py-8 text-center text-slate-500 dark:text-slate-400">
+                  No categories found.
+                </td>
+              </tr>
+            @endforelse
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-4">
+        {{ $categories->links() }}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{{-- EDIT MODAL --}}
+<div id="editModal" class="hidden fixed inset-0 z-[80]">
+  <div class="absolute inset-0 bg-slate-900/40" data-modal-close></div>
+
+  <div class="relative mx-auto mt-20 w-[92%] max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:bg-slate-900 dark:border-slate-800">
+    <div class="flex items-start justify-between">
+      <div>
+        <h3 class="text-lg font-semibold">Edit Category</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Update name, slug, description, image.</p>
+      </div>
+      <button class="h-10 w-10 rounded-xl border border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800" type="button" data-modal-close>✕</button>
+    </div>
+
+    <form id="editForm" class="mt-4 space-y-4" method="POST" enctype="multipart/form-data">
+      @csrf
+      @method('PUT')
+
+      <div>
+        <label class="text-sm font-semibold text-slate-700 dark:text-slate-200">Name</label>
+        <input id="editName" name="name"
+          class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800" />
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold text-slate-700 dark:text-slate-200">Slug</label>
+        <input id="editSlug" name="slug"
+          class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800" />
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold text-slate-700 dark:text-slate-200">Description</label>
+        <textarea id="editDesc" name="description" rows="4"
+          class="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"></textarea>
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold text-slate-700 dark:text-slate-200">Replace Image</label>
+        <input type="file" name="image" accept="image/*"
+          class="mt-2 block w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-200 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200 dark:hover:file:bg-slate-700" />
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button type="button" data-modal-close
+          class="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800">
+          Cancel
+        </button>
+        <button type="submit"
+          class="rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
+          Save Changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{{-- DELETE CONFIRM MODAL --}}
+<div id="deleteModal" class="hidden fixed inset-0 z-[90]">
+  <div class="absolute inset-0 bg-slate-900/40" data-delete-close></div>
+
+  <div class="relative mx-auto mt-28 w-[92%] max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:bg-slate-900 dark:border-slate-800">
+    <h3 class="text-lg font-semibold">Delete Category</h3>
+    <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+      Are you sure you want to delete <span id="deleteName" class="font-semibold"></span>?
+    </p>
+
+    <form id="deleteForm" class="mt-5 flex justify-end gap-2" method="POST">
+      @csrf
+      @method('DELETE')
+
+      <button type="button" data-delete-close
+        class="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800">
+        Cancel
+      </button>
+
+      <button type="submit"
+        class="rounded-2xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700">
+        Delete
+      </button>
+    </form>
+  </div>
+</div>
+
+{{-- Page JS: slug + image preview + modals --}}
+<script>
+  (function(){
+    // Auto-slug for CREATE (only when slug empty)
+    const name = document.getElementById('catName');
+    const slug = document.getElementById('catSlug');
+    const image = document.getElementById('catImage');
+    const wrap = document.getElementById('imgPreviewWrap');
+    const preview = document.getElementById('imgPreview');
+
+    function toSlug(v){
+      return v.toLowerCase().trim()
+        .replace(/[^a-z0-9\s-]/g,'')
+        .replace(/\s+/g,'-')
+        .replace(/-+/g,'-');
+    }
+
+    if(name && slug){
+      name.addEventListener('input', ()=>{
+        if(slug.value.trim().length) return;
+        slug.value = toSlug(name.value);
+      });
+    }
+
+    if(image && preview && wrap){
+      image.addEventListener('change', ()=>{
+        const file = image.files && image.files[0];
+        if(!file){ wrap.classList.add('hidden'); return; }
+        preview.src = URL.createObjectURL(file);
+        wrap.classList.remove('hidden');
+      });
+    }
+
+    // EDIT modal
+    const editModal = document.getElementById('editModal');
+    const editForm  = document.getElementById('editForm');
+    const editName  = document.getElementById('editName');
+    const editSlug  = document.getElementById('editSlug');
+    const editDesc  = document.getElementById('editDesc');
+
+    function openEdit(){
+      editModal.classList.remove('hidden');
+      document.body.classList.add('overflow-hidden');
+    }
+    function closeEdit(){
+      editModal.classList.add('hidden');
+      document.body.classList.remove('overflow-hidden');
+    }
+
+    document.querySelectorAll('[data-edit-btn]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.dataset.id;
+        editForm.action = "{{ url('/products/categories') }}/" + id;
+
+        editName.value = btn.dataset.name || '';
+        editSlug.value = btn.dataset.slug || '';
+        editDesc.value = btn.dataset.description || '';
+
+        openEdit();
+      });
+    });
+
+    editModal?.querySelectorAll('[data-modal-close]').forEach(el=>{
+      el.addEventListener('click', closeEdit);
+    });
+
+    // DELETE modal
+    const deleteModal = document.getElementById('deleteModal');
+    const deleteForm  = document.getElementById('deleteForm');
+    const deleteName  = document.getElementById('deleteName');
+
+    function openDelete(){
+      deleteModal.classList.remove('hidden');
+      document.body.classList.add('overflow-hidden');
+    }
+    function closeDelete(){
+      deleteModal.classList.add('hidden');
+      document.body.classList.remove('overflow-hidden');
+    }
+
+    document.querySelectorAll('[data-delete-btn]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.dataset.id;
+        deleteForm.action = "{{ url('/products/categories') }}/" + id;
+        deleteName.textContent = btn.dataset.name || 'this category';
+        openDelete();
+      });
+    });
+
+    deleteModal?.querySelectorAll('[data-delete-close]').forEach(el=>{
+      el.addEventListener('click', closeDelete);
+    });
+
+    // ESC closes modals
+    document.addEventListener('keydown', (e)=>{
+      if(e.key !== 'Escape') return;
+      closeEdit();
+      closeDelete();
+    });
+  })();
+</script>
+@endsection

@@ -18,7 +18,8 @@
     </script>
 
     <!-- Google ICONS -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 
     <!-- Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -41,7 +42,8 @@
     <div class="min-h-screen">
 
         <!-- TOPBAR -->
-        <header class="sticky top-0 z-40 border-b border-slate-200/70 bg-white/70 dark:bg-slate-950/70 dark:border-slate-800/70 backdrop-blur">
+        <header
+            class="sticky top-0 z-40 border-b border-slate-200/70 bg-white/70 dark:bg-slate-950/70 dark:border-slate-800/70 backdrop-blur">
             <div class="mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex h-16 items-center justify-between gap-3">
 
@@ -50,16 +52,19 @@
                         <button id="btnOpenDrawer"
                             class="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800"
                             aria-label="Open menu">
-                            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
                                 <path d="M4 6h16M4 12h16M4 18h16" />
                             </svg>
                         </button>
 
                         <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
-                            <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-soft"></div>
+                            <div
+                                class="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-soft">
+                            </div>
                             <div class="leading-tight">
                                 <div class="font-bold">ShopPulse</div>
-                                <div class="text-xs text-slate-500 dark:text-slate-400">@yield('subtitle','Dashboard')</div>
+                                <div class="text-xs text-slate-500 dark:text-slate-400">@yield('subtitle', 'Dashboard')</div>
                             </div>
                         </a>
                     </div>
@@ -67,8 +72,10 @@
                     <!-- Search (Desktop) -->
                     <div class="hidden md:flex flex-1 max-w-xl">
                         <div class="relative w-full">
-                            <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
-                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <span
+                                class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
                                     <circle cx="11" cy="11" r="7"></circle>
                                     <path d="M21 21l-4.3-4.3"></path>
                                 </svg>
@@ -97,16 +104,20 @@
                                     <div class="text-sm font-semibold">Admin</div>
                                     <div class="text-xs text-slate-500 dark:text-slate-400">owner@shop</div>
                                 </div>
-                                <svg class="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <svg class="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
                                     <path d="m6 9 6 6 6-6" />
                                 </svg>
                             </button>
 
                             <div id="profileMenu"
                                 class="hidden absolute right-0 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft dark:bg-slate-900 dark:border-slate-800">
-                                <a class="block px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-800" href="{{ route('settings.general') }}">Settings</a>
+                                <a class="block px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    href="{{ route('settings.general') }}">Settings</a>
                                 <div class="h-px bg-slate-100 dark:bg-slate-800"></div>
-                                <button class="w-full text-left px-4 py-3 text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" type="button">
+                                <button
+                                    class="w-full text-left px-4 py-3 text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                    type="button">
                                     Logout
                                 </button>
                             </div>
@@ -130,8 +141,10 @@
 
                 <!-- SIDEBAR DESKTOP -->
                 <aside class="hidden lg:block w-64 shrink-0">
-                    <nav class="sticky top-24 h-[calc(100vh-6rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-soft dark:bg-slate-900 dark:border-slate-800">
-                        <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <nav
+                        class="sticky top-24 h-[calc(100vh-6rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-soft dark:bg-slate-900 dark:border-slate-800">
+                        <div
+                            class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Menu
                         </div>
 
@@ -142,8 +155,7 @@
                 <!-- MOBILE DRAWER -->
                 <div class="lg:hidden">
                     <!-- Overlay -->
-                    <div id="drawerOverlay"
-                        class="hidden fixed inset-0 z-[60] bg-slate-900/40 overlay"
+                    <div id="drawerOverlay" class="hidden fixed inset-0 z-[60] bg-slate-900/40 overlay"
                         aria-hidden="true"></div>
 
                     <!-- Panel -->
@@ -151,7 +163,8 @@
                         class="fixed left-0 top-0 z-[70] h-full w-[86%] max-w-sm -translate-x-full transform bg-white p-4 shadow-soft transition-transform duration-300 ease-in-out dark:bg-slate-900 overflow-y-auto">
                         <div class="flex items-center justify-between">
                             <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
-                                <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600"></div>
+                                <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600">
+                                </div>
                                 <div>
                                     <div class="font-bold">ShopPulse</div>
                                     <div class="text-xs text-slate-500 dark:text-slate-400">Dashboard</div>
@@ -160,8 +173,7 @@
 
                             <button id="btnCloseDrawer"
                                 class="h-10 w-10 rounded-2xl border border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
-                                type="button"
-                                aria-label="Close menu">✕</button>
+                                type="button" aria-label="Close menu">✕</button>
                         </div>
 
                         <div class="mt-4">
@@ -180,7 +192,7 @@
                         </div>
 
                         @hasSection('pageActions')
-                        <div class="flex flex-wrap items-center gap-2">@yield('pageActions')</div>
+                            <div class="flex flex-wrap items-center gap-2">@yield('pageActions')</div>
                         @endif
                     </div>
 
