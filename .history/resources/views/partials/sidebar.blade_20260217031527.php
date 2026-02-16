@@ -290,7 +290,7 @@ $openSettings = $is('settings.*');
         </div>
     </a>
 
-    <a href="{{ route('pos.barcode.labels') }}"
+    <a href="{{ route('pos.barcode') }}"
         class="{{ $baseLink }} {{ request()->routeIs('pos.barcode.*') ? $activeParent : $idleParent }}">
         <span class="grid h-9 w-9 place-items-center rounded-2xl bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

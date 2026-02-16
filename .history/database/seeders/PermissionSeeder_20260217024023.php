@@ -14,7 +14,7 @@ class PermissionSeeder extends Seeder
         // Disable foreign key checks
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
         
-        // Clear pivot table first
+        // Clear existing data from pivot table first
         DB::table('permission_role')->truncate();
         
         // Now clear permissions
@@ -78,20 +78,24 @@ class PermissionSeeder extends Seeder
         $vendorRole = Role::where('name', 'vendor')->first();
         $userRole = Role::where('name', 'user')->first();
 
+        // Admin gets all permissions
         if ($adminRole) {
             $adminRole->permissions()->sync(Permission::all());
         }
 
+        // Manager gets most permissions except user management
         if ($managerRole) {
             $managerPermissions = Permission::whereNotIn('group', ['settings'])->get();
             $managerRole->permissions()->sync($managerPermissions);
         }
 
+        // Editor gets content permissions
         if ($editorRole) {
             $editorPermissions = Permission::whereIn('group', ['products', 'dashboard'])->get();
             $editorRole->permissions()->sync($editorPermissions);
         }
 
+        // Vendor gets limited product permissions
         if ($vendorRole) {
             $vendorPermissions = Permission::whereIn('name', [
                 'dashboard.view',
@@ -103,6 +107,7 @@ class PermissionSeeder extends Seeder
             $vendorRole->permissions()->sync($vendorPermissions);
         }
 
+        // Regular user gets view only
         if ($userRole) {
             $userPermissions = Permission::whereIn('name', [
                 'dashboard.view',

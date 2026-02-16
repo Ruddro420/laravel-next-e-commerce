@@ -4,25 +4,44 @@ namespace Database\Seeders;
 
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
-class PermissionSeeder extends Seeder
+class PermissionSystemSeeder extends Seeder
 {
     public function run(): void
     {
         // Disable foreign key checks
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
         
-        // Clear pivot table first
+        // Clear all tables in correct order
         DB::table('permission_role')->truncate();
-        
-        // Now clear permissions
-        Permission::truncate();
+        DB::table('role_user')->truncate();
+        DB::table('permissions')->truncate();
+        DB::table('roles')->truncate();
         
         // Re-enable foreign key checks
         DB::statement('SET FOREIGN_KEY_CHECKS=1');
 
+        // Create roles
+        $roles = [
+            'admin' => 'Administrator',
+            'manager' => 'Manager',
+            'editor' => 'Editor',
+            'user' => 'Regular User',
+            'vendor' => 'Vendor',
+        ];
+
+        foreach ($roles as $name => $displayName) {
+            Role::create([
+                'name' => $name,
+                'display_name' => $displayName
+            ]);
+        }
+
+        // Create permissions
         $permissions = [
             // Dashboard
             ['name' => 'dashboard.view', 'group' => 'dashboard'],
@@ -65,50 +84,55 @@ class PermissionSeeder extends Seeder
         }
 
         // Assign permissions to roles
-        $this->assignPermissionsToRoles();
-        
-        $this->command->info('Permissions seeded successfully!');
-    }
-
-    private function assignPermissionsToRoles(): void
-    {
         $adminRole = Role::where('name', 'admin')->first();
         $managerRole = Role::where('name', 'manager')->first();
         $editorRole = Role::where('name', 'editor')->first();
         $vendorRole = Role::where('name', 'vendor')->first();
         $userRole = Role::where('name', 'user')->first();
 
-        if ($adminRole) {
-            $adminRole->permissions()->sync(Permission::all());
-        }
+        // Admin gets all permissions
+        $adminRole->permissions()->sync(Permission::all());
 
-        if ($managerRole) {
-            $managerPermissions = Permission::whereNotIn('group', ['settings'])->get();
-            $managerRole->permissions()->sync($managerPermissions);
-        }
+        // Manager gets most permissions
+        $managerRole->permissions()->sync(
+            Permission::whereNotIn('group', ['settings'])->pluck('id')->toArray()
+        );
 
-        if ($editorRole) {
-            $editorPermissions = Permission::whereIn('group', ['products', 'dashboard'])->get();
-            $editorRole->permissions()->sync($editorPermissions);
-        }
+        // Editor gets content permissions
+        $editorRole->permissions()->sync(
+            Permission::whereIn('group', ['products', 'dashboard'])->pluck('id')->toArray()
+        );
 
-        if ($vendorRole) {
-            $vendorPermissions = Permission::whereIn('name', [
+        // Vendor gets limited permissions
+        $vendorRole->permissions()->sync(
+            Permission::whereIn('name', [
                 'dashboard.view',
                 'products.view',
                 'products.create',
                 'products.edit',
                 'crm.orders'
-            ])->get();
-            $vendorRole->permissions()->sync($vendorPermissions);
-        }
+            ])->pluck('id')->toArray()
+        );
 
-        if ($userRole) {
-            $userPermissions = Permission::whereIn('name', [
+        // User gets view only
+        $userRole->permissions()->sync(
+            Permission::whereIn('name', [
                 'dashboard.view',
                 'products.view'
-            ])->get();
-            $userRole->permissions()->sync($userPermissions);
-        }
+            ])->pluck('id')->toArray()
+        );
+
+        // Create admin user
+        $admin = User::updateOrCreate(
+            ['email' => 'admin@shop.com'],
+            [
+                'name' => 'Admin',
+                'password' => Hash::make('12345678'),
+                'is_active' => true
+            ]
+        );
+        $admin->roles()->sync([$adminRole->id]);
+
+        $this->command->info('Permission system seeded successfully!');
     }
 }

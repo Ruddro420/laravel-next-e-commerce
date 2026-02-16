@@ -93,7 +93,7 @@
 
                     <!-- Search (Desktop) -->
                     <div class="hidden md:flex flex-1 max-w-xl">
-                        <!-- <div class="relative w-full">
+                        <div class="relative w-full">
                             <span
                                 class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -105,7 +105,7 @@
                             <input
                                 class="w-full rounded-2xl border border-slate-200 bg-white px-10 py-2.5 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"
                                 placeholder="Search orders, products, customers..." />
-                        </div> -->
+                        </div>
                     </div>
 
                     <!-- Right -->
@@ -157,11 +157,11 @@
                 </div>
 
                 <!-- Search (Mobile) -->
-                <!-- <div class="md:hidden pb-3">
+                <div class="md:hidden pb-3">
                     <input
                         class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"
                         placeholder="Search..." />
-                </div> -->
+                </div>
             </div>
         </header>
 

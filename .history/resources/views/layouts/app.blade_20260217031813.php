@@ -93,7 +93,7 @@
 
                     <!-- Search (Desktop) -->
                     <div class="hidden md:flex flex-1 max-w-xl">
-                        <!-- <div class="relative w-full">
+                        <div class="relative w-full">
                             <span
                                 class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -105,7 +105,7 @@
                             <input
                                 class="w-full rounded-2xl border border-slate-200 bg-white px-10 py-2.5 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"
                                 placeholder="Search orders, products, customers..." />
-                        </div> -->
+                        </div>
                     </div>
 
                     <!-- Right -->
@@ -118,21 +118,21 @@
                         </button>
 
                         <div class="relative">
-                            <button id="btnProfile"
-                                class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-2 py-1.5 shadow-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800"
-                                type="button">
-                                <div class="h-9 w-9 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-white font-bold">
-                                    {{ substr(auth()->user()->name ?? 'U', 0, 1) }}
-                                </div>
-                                <div class="hidden sm:block text-left leading-tight pr-1">
-                                    <div class="text-sm font-semibold">{{ auth()->user()->name ?? 'Guest' }}</div>
-                                    <div class="text-xs text-slate-500 dark:text-slate-400">{{ auth()->user()->email ?? 'guest@example.com' }}</div>
-                                </div>
-                                <svg class="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none"
-                                    stroke="currentColor" stroke-width="2">
-                                    <path d="m6 9 6 6 6-6" />
-                                </svg>
-                            </button>
+                           <button id="btnProfile"
+    class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-2 py-1.5 shadow-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800"
+    type="button">
+    <div class="h-9 w-9 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-white font-bold">
+        {{ substr(auth()->user()->name ?? 'U', 0, 1) }}
+    </div>
+    <div class="hidden sm:block text-left leading-tight pr-1">
+        <div class="text-sm font-semibold">{{ auth()->user()->name ?? 'Guest' }}</div>
+        <div class="text-xs text-slate-500 dark:text-slate-400">{{ auth()->user()->email ?? 'guest@example.com' }}</div>
+    </div>
+    <svg class="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2">
+        <path d="m6 9 6 6 6-6" />
+    </svg>
+</button>
 
                             <div id="profileMenu"
                                 class="hidden absolute right-0 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft dark:bg-slate-900 dark:border-slate-800">
@@ -157,11 +157,11 @@
                 </div>
 
                 <!-- Search (Mobile) -->
-                <!-- <div class="md:hidden pb-3">
+                <div class="md:hidden pb-3">
                     <input
                         class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500/40 dark:bg-slate-900 dark:border-slate-800"
                         placeholder="Search..." />
-                </div> -->
+                </div>
             </div>
         </header>
 

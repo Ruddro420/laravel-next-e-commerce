@@ -8,8 +8,11 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Only call seeders here, NOT in migrations
         $this->call([
-            PermissionSystemSeeder::class,
+            RoleSeeder::class,
+            PermissionSeeder::class,
+            AdminSeeder::class,
         ]);
     }
 }

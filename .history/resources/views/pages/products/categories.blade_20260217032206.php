@@ -330,7 +330,7 @@
     document.querySelectorAll('[data-delete-btn]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const id = btn.dataset.id;
-        deleteForm.action = "{{ url('/categories') }}/" + id;
+        deleteForm.action = "{{ url('/products/categories') }}/" + id;
         deleteName.textContent = btn.dataset.name || 'this category';
         openDelete();
       });

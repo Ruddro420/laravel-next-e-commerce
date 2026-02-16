@@ -2,27 +2,34 @@
 
 namespace Database\Seeders;
 
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
+
+class PermissionSeeder extends Seeder
+{
+    /**
+     * Run the database seeds.
+     */
+    public function run(): void
+    {
+        //
+    }
+}
+<?php
+
+namespace Database\Seeders;
+
 use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 class PermissionSeeder extends Seeder
 {
     public function run(): void
     {
-        // Disable foreign key checks
-        DB::statement('SET FOREIGN_KEY_CHECKS=0');
-        
-        // Clear pivot table first
-        DB::table('permission_role')->truncate();
-        
-        // Now clear permissions
+        // Clear existing permissions
         Permission::truncate();
         
-        // Re-enable foreign key checks
-        DB::statement('SET FOREIGN_KEY_CHECKS=1');
-
         $permissions = [
             // Dashboard
             ['name' => 'dashboard.view', 'group' => 'dashboard'],
@@ -44,7 +51,6 @@ class PermissionSeeder extends Seeder
             ['name' => 'crm.coupons', 'group' => 'crm'],
             ['name' => 'crm.taxes', 'group' => 'crm'],
             ['name' => 'crm.stock', 'group' => 'crm'],
-            ['name' => 'crm.payments', 'group' => 'crm'],
             
             // Analytics
             ['name' => 'analytics.view', 'group' => 'analytics'],
@@ -55,9 +61,7 @@ class PermissionSeeder extends Seeder
             
             // Settings
             ['name' => 'settings.view', 'group' => 'settings'],
-            ['name' => 'settings.general', 'group' => 'settings'],
             ['name' => 'settings.users', 'group' => 'settings'],
-            ['name' => 'settings.roles', 'group' => 'settings'],
         ];
 
         foreach ($permissions as $perm) {
@@ -66,8 +70,6 @@ class PermissionSeeder extends Seeder
 
         // Assign permissions to roles
         $this->assignPermissionsToRoles();
-        
-        $this->command->info('Permissions seeded successfully!');
     }
 
     private function assignPermissionsToRoles(): void
@@ -78,20 +80,24 @@ class PermissionSeeder extends Seeder
         $vendorRole = Role::where('name', 'vendor')->first();
         $userRole = Role::where('name', 'user')->first();
 
+        // Admin gets all permissions
         if ($adminRole) {
             $adminRole->permissions()->sync(Permission::all());
         }
 
+        // Manager gets most permissions except user management
         if ($managerRole) {
             $managerPermissions = Permission::whereNotIn('group', ['settings'])->get();
             $managerRole->permissions()->sync($managerPermissions);
         }
 
+        // Editor gets content permissions
         if ($editorRole) {
             $editorPermissions = Permission::whereIn('group', ['products', 'dashboard'])->get();
             $editorRole->permissions()->sync($editorPermissions);
         }
 
+        // Vendor gets limited product permissions
         if ($vendorRole) {
             $vendorPermissions = Permission::whereIn('name', [
                 'dashboard.view',
@@ -103,6 +109,7 @@ class PermissionSeeder extends Seeder
             $vendorRole->permissions()->sync($vendorPermissions);
         }
 
+        // Regular user gets view only
         if ($userRole) {
             $userPermissions = Permission::whereIn('name', [
                 'dashboard.view',
