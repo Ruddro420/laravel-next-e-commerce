@@ -21,7 +21,7 @@ use App\Http\Controllers\OrderController;
 // });
 
 // Dashboard
-Route::get('/dashboard', [DashboardController::class,'index'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
 // Route::view('/dashboard', 'pages.dashboard')->name('dashboard');
 
@@ -183,3 +183,20 @@ Route::get('/analytics/export/csv', [AnalyticsController::class, 'exportCsv'])->
 // Settings
 Route::get('/settings/general', [GeneralSettingController::class, 'edit'])->name('settings.general');
 Route::put('/settings/general', [GeneralSettingController::class, 'update'])->name('settings.general.update');
+
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Settings\UserManagementController;
+
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [LoginController::class, 'show'])->name('login');
+    Route::post('/login', [LoginController::class, 'login'])->name('login.post');
+});
+
+Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->middleware('auth');
+
+Route::middleware(['auth', 'perm:settings.users'])->group(function () {
+    Route::get('/settings/users', [UserManagementController::class, 'index'])->name('settings.users');
+    Route::post('/settings/users', [UserManagementController::class, 'store'])->name('settings.users.store');
+    Route::put('/settings/users/{user}', [UserManagementController::class, 'update'])->name('settings.users.update');
+    Route::delete('/settings/users/{user}', [UserManagementController::class, 'destroy'])->name('settings.users.destroy');
+});
