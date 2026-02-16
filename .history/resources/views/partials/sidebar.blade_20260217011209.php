@@ -18,7 +18,7 @@
   // - Admin can see everything
   // - Others: must have canPerm('permission.key')
   $user = auth()->user();
-  $isAdmin = (bool)($user?->is_admin ?? false); // ✅ make sure your users table has is_admin boolean
+  $isAdmin = (bool)($user?->is_active ?? 1); // ✅ make sure your users table has is_admin boolean
   $can = function(string $perm) use ($user, $isAdmin) {
       return $isAdmin || ($user && method_exists($user,'canPerm') && $user->canPerm($perm));
   };

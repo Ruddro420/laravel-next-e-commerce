@@ -79,34 +79,34 @@ Route::middleware('auth')->group(function () {
 
         // Categories
         Route::middleware('perm:products.categories')->group(function () {
-            Route::get('/categories', [CategoryController::class, 'index'])->name('products.categories');
-            Route::post('/categories', [CategoryController::class, 'store'])->name('products.categories.store');
-            Route::put('/categories/{category}', [CategoryController::class, 'update'])->name('products.categories.update');
-            Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->name('products.categories.destroy');
+            Route::get('/products/categories', [CategoryController::class, 'index'])->name('products.categories');
+            Route::post('/products/categories', [CategoryController::class, 'store'])->name('products.categories.store');
+            Route::put('/products/categories/{category}', [CategoryController::class, 'update'])->name('products.categories.update');
+            Route::delete('/products/categories/{category}', [CategoryController::class, 'destroy'])->name('products.categories.destroy');
         });
 
         // Brands
         Route::middleware('perm:products.brands')->group(function () {
-            Route::get('/brands', [BrandController::class, 'index'])->name('products.brands');
-            Route::post('/brands', [BrandController::class, 'store'])->name('products.brands.store');
-            Route::put('/brands/{brand}', [BrandController::class, 'update'])->name('products.brands.update');
-            Route::delete('/brands/{brand}', [BrandController::class, 'destroy'])->name('products.brands.destroy');
+            Route::get('/products/brands', [BrandController::class, 'index'])->name('products.brands');
+            Route::post('/products/brands', [BrandController::class, 'store'])->name('products.brands.store');
+            Route::put('/products/brands/{brand}', [BrandController::class, 'update'])->name('products.brands.update');
+            Route::delete('/products/brands/{brand}', [BrandController::class, 'destroy'])->name('products.brands.destroy');
         });
 
         // Attributes
         Route::middleware('perm:products.attributes')->group(function () {
-            Route::get('/attributes', [AttributeController::class, 'index'])->name('products.attributes');
-            Route::post('/attributes', [AttributeController::class, 'store'])->name('products.attributes.store');
-            Route::put('/attributes/{attribute}', [AttributeController::class, 'update'])->name('products.attributes.update');
-            Route::delete('/attributes/{attribute}', [AttributeController::class, 'destroy'])->name('products.attributes.destroy');
+            Route::get('/products/attributes', [AttributeController::class, 'index'])->name('products.attributes');
+            Route::post('/products/attributes', [AttributeController::class, 'store'])->name('products.attributes.store');
+            Route::put('/products/attributes/{attribute}', [AttributeController::class, 'update'])->name('products.attributes.update');
+            Route::delete('/products/attributes/{attribute}', [AttributeController::class, 'destroy'])->name('products.attributes.destroy');
         });
 
         // Reviews
         Route::middleware('perm:products.reviews')->group(function () {
-            Route::get('/reviews', [ReviewController::class, 'index'])->name('products.reviews');
-            Route::post('/reviews', [ReviewController::class, 'store'])->name('products.reviews.store');
-            Route::put('/reviews/{review}', [ReviewController::class, 'update'])->name('products.reviews.update');
-            Route::delete('/reviews/{review}', [ReviewController::class, 'destroy'])->name('products.reviews.destroy');
+            Route::get('/products/reviews', [ReviewController::class, 'index'])->name('products.reviews');
+            Route::post('/products/reviews', [ReviewController::class, 'store'])->name('products.reviews.store');
+            Route::put('/products/reviews/{review}', [ReviewController::class, 'update'])->name('products.reviews.update');
+            Route::delete('/products/reviews/{review}', [ReviewController::class, 'destroy'])->name('products.reviews.destroy');
         });
     });
 
@@ -221,4 +221,10 @@ Route::middleware('auth')->group(function () {
         });
     });
 
+    Route::view('/products', 'pages.products.index')->name('products.index');
+    Route::view('/products/create', 'pages.products.create')->name('products.create');
+    Route::view('/products/categories', 'pages.products.categories')->name('products.categories');
+    Route::view('/products/brands', 'pages.products.brands')->name('products.brands');
+    Route::view('/products/attributes', 'pages.products.attributes')->name('products.attributes');
+    Route::view('/products/reviews', 'pages.products.reviews')->name('products.reviews');
 });

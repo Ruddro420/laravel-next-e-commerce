@@ -1,4 +1,4 @@
-<?php
+<?php 
 
 namespace App\Http\Middleware;
 
@@ -12,9 +12,10 @@ class RequirePermission
         $user = $request->user();
         if (!$user) return redirect()->route('login');
 
-        // admin bypass
+        // ✅ admin bypass (now works)
         if ($user->hasRole('admin')) return $next($request);
 
+        // ✅ permission check
         if (!$user->canPerm($perm)) {
             abort(403, 'You do not have permission to access this page.');
         }

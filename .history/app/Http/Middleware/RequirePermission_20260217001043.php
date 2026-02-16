@@ -16,7 +16,7 @@ class RequirePermission
         if ($user->hasRole('admin')) return $next($request);
 
         if (!$user->canPerm($perm)) {
-            abort(403, 'You do not have permission to access this page.');
+            abort(403, 'Unauthorized');
         }
 
         return $next($request);
