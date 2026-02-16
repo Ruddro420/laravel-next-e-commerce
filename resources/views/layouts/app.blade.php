@@ -25,6 +25,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {{-- Favicon --}}
+    @php
+        $favicon = $appSettings->favicon_path ? asset('storage/' . $appSettings->favicon_path) : asset('favicon.ico'); // fallback
+    @endphp
+
+    <link rel="icon" type="image/png" href="{{ $favicon }}">
+    <link rel="shortcut icon" href="{{ $favicon }}">
 
     <style>
         html,
@@ -59,14 +66,29 @@
                         </button>
 
                         <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
+                            @php
+                                $logo = $appSettings->logo_path ? asset('storage/' . $appSettings->logo_path) : null;
+                                $name = $appSettings->software_name ?? 'ShopPulse';
+                            @endphp
+
                             <div
-                                class="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-soft">
+                                class="h-10 w-10 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900 grid place-items-center">
+                                @if ($logo)
+                                    <img src="{{ $logo }}" alt="logo" class="h-full w-full object-cover">
+                                @else
+                                    {{-- fallback gradient --}}
+                                    <div
+                                        class="h-full w-full rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600">
+                                    </div>
+                                @endif
                             </div>
+
                             <div class="leading-tight">
-                                <div class="font-bold">ShopPulse</div>
-                                <div class="text-xs text-slate-500 dark:text-slate-400">@yield('subtitle', 'Dashboard')</div>
+                                <div class="font-extrabold">{{ $name }}</div>
+                                {{-- <div class="text-xs text-slate-500 dark:text-slate-400">@yield('subtitle', 'Dashboard')</div> --}}
                             </div>
                         </a>
+
                     </div>
 
                     <!-- Search (Desktop) -->
@@ -162,14 +184,39 @@
                     <aside id="drawerPanel"
                         class="fixed left-0 top-0 z-[70] h-full w-[86%] max-w-sm -translate-x-full transform bg-white p-4 shadow-soft transition-transform duration-300 ease-in-out dark:bg-slate-900 overflow-y-auto">
                         <div class="flex items-center justify-between">
-                            <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
+                            {{-- <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
                                 <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600">
                                 </div>
                                 <div>
                                     <div class="font-bold">ShopPulse</div>
                                     <div class="text-xs text-slate-500 dark:text-slate-400">Dashboard</div>
                                 </div>
+                            </a> --}}
+
+                            @php
+                                $logo = $appSettings->logo_path ? asset('storage/' . $appSettings->logo_path) : null;
+                                $name = $appSettings->software_name ?? 'ShopPulse';
+                            @endphp
+
+                            <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
+                                <div
+                                    class="h-10 w-10 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 grid place-items-center">
+                                    @if ($logo)
+                                        <img src="{{ $logo }}" alt="logo"
+                                            class="h-full w-full object-cover">
+                                    @else
+                                        <div
+                                            class="h-full w-full rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600">
+                                        </div>
+                                    @endif
+                                </div>
+
+                                <div>
+                                    <div class="font-extrabold">{{ $name }}</div>
+                                    {{-- <div class="text-xs text-slate-500 dark:text-slate-400">@yield('subtitle', 'Dashboard')</div> --}}
+                                </div>
                             </a>
+
 
                             <button id="btnCloseDrawer"
                                 class="h-10 w-10 rounded-2xl border border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"

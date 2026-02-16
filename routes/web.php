@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\POSController;
 use Illuminate\Support\Facades\Route;
@@ -9,8 +10,10 @@ use App\Http\Controllers\AttributeController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CouponController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\TaxRateController;
 use App\Http\Controllers\OrderController;
+
 
 
 // Route::get('/', function () {
@@ -18,7 +21,10 @@ use App\Http\Controllers\OrderController;
 // });
 
 // Dashboard
-Route::view('/dashboard', 'pages.dashboard')->name('dashboard');
+Route::get('/dashboard', [DashboardController::class,'index'])->name('dashboard');
+
+// Route::view('/dashboard', 'pages.dashboard')->name('dashboard');
+
 
 // Product group
 Route::view('/products', 'pages.products.index')->name('products.index');
@@ -94,6 +100,7 @@ Route::put('/crm/orders/{order}/payment', [PaymentController::class, 'update'])-
 // Reviews
 
 use App\Http\Controllers\ReviewController;
+use App\Http\Controllers\Settings\GeneralSettingController;
 use App\Http\Controllers\StockController;
 
 Route::prefix('products')->name('products.')->group(function () {
@@ -166,3 +173,13 @@ Route::prefix('pos')->group(function () {
     Route::post('/barcode-labels/print', [POSController::class, 'barcodeLabelsPrint'])
         ->name('pos.barcode.labels.print');
 });
+
+// Reports
+
+
+Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics');
+Route::get('/analytics/export/csv', [AnalyticsController::class, 'exportCsv'])->name('analytics.export.csv');
+
+// Settings
+Route::get('/settings/general', [GeneralSettingController::class, 'edit'])->name('settings.general');
+Route::put('/settings/general', [GeneralSettingController::class, 'update'])->name('settings.general.update');

@@ -187,12 +187,12 @@ $openSettings = $is('settings.*');
                 </div>
             </a>
 
-            <a href="{{ route('crm.reports') }}" class="{{ $baseChild }} {{ $is('crm.reports') ? $activeChild : $idleChild }}">
+            {{-- <a href="{{ route('crm.reports') }}" class="{{ $baseChild }} {{ $is('crm.reports') ? $activeChild : $idleChild }}">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] leading-none opacity-70">remove</span>
                     <div>Reports</div>
                 </div>
-            </a>
+            </a> --}}
 
             <a href="{{ route('crm.payments') }}" class="{{ $baseChild }} {{ $is('crm.payments') ? $activeChild : $idleChild }}">
                 <div class="flex items-center gap-2">
@@ -215,12 +215,12 @@ $openSettings = $is('settings.*');
                 </div>
             </a>
 
-            <a href="{{ route('crm.settings') }}" class="{{ $baseChild }} {{ $is('crm.settings') ? $activeChild : $idleChild }}">
+            {{-- <a href="{{ route('crm.settings') }}" class="{{ $baseChild }} {{ $is('crm.settings') ? $activeChild : $idleChild }}">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] leading-none opacity-70">remove</span>
                     <div>Settings</div>
                 </div>
-            </a>
+            </a> --}}
 
         </div>
     </div>
@@ -277,7 +277,7 @@ $openSettings = $is('settings.*');
 
 
     {{-- ===================== Landing Page ===================== --}}
-    <a href="{{ route('landing') }}"
+    {{-- <a href="{{ route('landing') }}"
         class="{{ $baseLink }} {{ $is('landing') ? $activeParent : $idleParent }}">
         <span class="grid h-9 w-9 place-items-center rounded-2xl bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -289,10 +289,10 @@ $openSettings = $is('settings.*');
             <div>Landing Page</div>
             <div class="text-xs opacity-70">Marketing</div>
         </div>
-    </a>
+    </a> --}}
 
     {{-- ===================== Frontend Design ===================== --}}
-    <a href="{{ route('frontend') }}"
+    {{-- <a href="{{ route('frontend') }}"
         class="{{ $baseLink }} {{ $is('frontend') ? $activeParent : $idleParent }}">
         <span class="grid h-9 w-9 place-items-center rounded-2xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -306,7 +306,7 @@ $openSettings = $is('settings.*');
             <div>Frontend Design</div>
             <div class="text-xs opacity-70">UI builder</div>
         </div>
-    </a>
+    </a> --}}
 
     {{-- ===================== Settings (Dropdown) ===================== --}}
     <button type="button"
@@ -354,26 +354,26 @@ $openSettings = $is('settings.*');
                 </div>
             </a>
 
-            <a href="{{ route('settings.contact') }}" class="{{ $baseChild }} {{ $is('settings.contact') ? $activeChild : $idleChild }}">
+            {{-- <a href="{{ route('settings.contact') }}" class="{{ $baseChild }} {{ $is('settings.contact') ? $activeChild : $idleChild }}">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] leading-none opacity-70">remove</span>
                     <div>Contact Info</div>
                 </div>
-            </a>
+            </a> --}}
 
-            <a href="{{ route('settings.colors') }}" class="{{ $baseChild }} {{ $is('settings.colors') ? $activeChild : $idleChild }}">
+            {{-- <a href="{{ route('settings.colors') }}" class="{{ $baseChild }} {{ $is('settings.colors') ? $activeChild : $idleChild }}">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] leading-none opacity-70">remove</span>
                     <div>Color Combination</div>
                 </div>
-            </a>
+            </a> --}}
 
-            <a href="{{ route('settings.fonts') }}" class="{{ $baseChild }} {{ $is('settings.fonts') ? $activeChild : $idleChild }}">
+            {{-- <a href="{{ route('settings.fonts') }}" class="{{ $baseChild }} {{ $is('settings.fonts') ? $activeChild : $idleChild }}">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] leading-none opacity-70">remove</span>
                     <div>Font Family</div>
                 </div>
-            </a>
+            </a> --}}
 
         </div>
     </div>
