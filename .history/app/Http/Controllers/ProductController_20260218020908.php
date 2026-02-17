@@ -84,14 +84,8 @@ class ProductController extends Controller
 
     public function show(Product $product)
     {
-        $product->load([
-            'gallery',
-            'variants',
-            'attributeValues.attribute',   // needs relation in AttributeValue model (below)
-            'category',
-            'brand',
-        ]);
-
+        // add attributeValues if you added relation in Product model
+        $product->load(['gallery', 'variants', 'attributeValues']);
         return view('pages.products.show', compact('product'));
     }
 
@@ -244,8 +238,8 @@ class ProductController extends Controller
 
         while (
             Product::where('slug', $slug)
-            ->when($ignoreId, fn($q) => $q->where('id', '!=', $ignoreId))
-            ->exists()
+                ->when($ignoreId, fn($q) => $q->where('id', '!=', $ignoreId))
+                ->exists()
         ) {
             $slug = $baseSlug . '-' . $i++;
         }

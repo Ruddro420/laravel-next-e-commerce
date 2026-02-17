@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
-use App\Models\ProductVariant;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\Coupon;
@@ -38,12 +37,12 @@ class POSController extends Controller
                     ->orWhere('barcode', 'like', "%$q%");
             })
             ->where('is_active', true)
-            ->with(['variants'])
+            ->with(['variants']) // <-- for variable
             ->limit(24)
             ->get();
 
         $items = $products->map(function ($p) {
-            $basePrice = (float)($p->sale_price ?? $p->regular_price ?? 0);
+            $basePrice = $p->sale_price ?? $p->regular_price ?? 0;
 
             $out = [
                 'id' => $p->id,
@@ -51,7 +50,7 @@ class POSController extends Controller
                 'sku' => $p->sku,
                 'barcode' => $p->barcode,
                 'type' => $p->product_type,
-                'price' => $basePrice,
+                'price' => (float)$basePrice,
                 'stock' => $p->stock,
                 'image' => $p->featured_image ? asset('storage/' . $p->featured_image) : null,
             ];
@@ -60,13 +59,13 @@ class POSController extends Controller
                 $out['variants'] = $p->variants->map(function ($v) {
                     $attrs = is_array($v->attributes) ? $v->attributes : (json_decode($v->attributes, true) ?: []);
                     $label = collect($attrs)->map(fn($val, $key) => $key . ': ' . $val)->implode(', ');
-                    $price = (float)($v->sale_price ?? $v->regular_price ?? 0);
+                    $price = $v->sale_price ?? $v->regular_price ?? 0;
 
                     return [
                         'id' => $v->id,
                         'label' => $label ?: ('Variant #' . $v->id),
                         'sku' => $v->sku,
-                        'price' => $price,
+                        'price' => (float)$price,
                         'stock' => $v->stock,
                         'image' => $v->image_path ? asset('storage/' . $v->image_path) : null,
                     ];
@@ -78,6 +77,7 @@ class POSController extends Controller
 
         return response()->json($items);
     }
+
 
     // POST /pos/customers (AJAX quick add)
     public function storeCustomer(Request $request)
@@ -189,7 +189,6 @@ class POSController extends Controller
 
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'items.*.variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
 
             'payment.method' => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
@@ -197,11 +196,11 @@ class POSController extends Controller
             'payment.amount_paid' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data, $request) {
             $customer = $data['customer_id'] ? Customer::find($data['customer_id']) : null;
 
-            // Build trusted items payload (supports variants)
-            [$subtotal, $itemsPayload] = $this->buildItemsTrusted($data['items']);
+            // Build items from products (server trusted)
+            [$subtotal, $itemsPayload] = $this->buildItemsFromProducts($data['items']);
 
             // Coupon
             [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
@@ -209,18 +208,15 @@ class POSController extends Controller
                 $subtotal
             );
 
-            // Tax base = subtotal - discount + shipping
-            $baseForTax = $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0);
-
             // Tax
             [$taxRateId, $taxAmount] = $this->applyTax(
                 $data['tax_rate_id'] ?? null,
-                $baseForTax
+                $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0)
             );
 
             $total = max(0, $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount);
 
-            // Stock check + decrease (product or variant)
+            // Stock check + decrease (safe)
             $this->decreaseStockOrFail($itemsPayload);
 
             $order = Order::create([
@@ -261,10 +257,12 @@ class POSController extends Controller
                 'paid_at' => $paymentStatus === 'paid' ? now() : null,
             ]);
 
+            // increment coupon usage
             if ($couponId) {
                 Coupon::where('id', $couponId)->increment('used_count');
             }
 
+            // delete hold if checked out from hold
             if (!empty($data['hold_id'])) {
                 PosHold::where('id', $data['hold_id'])->delete();
             }
@@ -283,97 +281,48 @@ class POSController extends Controller
 
     // =============== Helpers ===============
 
-    // Builds order items and subtotal using DB-trusted product/variant prices
-    private function buildItemsTrusted(array $items): array
+    private function buildItemsFromProducts(array $items): array
     {
         $payload = [];
         $subtotal = 0;
 
         foreach ($items as $it) {
-            $productId = (int)$it['product_id'];
-            $variantId = isset($it['variant_id']) ? (int)$it['variant_id'] : null;
+            $p = Product::find($it['product_id']);
             $qty = (int)$it['qty'];
 
-            $p = Product::findOrFail($productId);
+            $price = (float)($p->sale_price ?? $p->regular_price ?? 0);
+            $line = $qty * $price;
+            $subtotal += $line;
 
-            // If variant_id provided, validate it belongs to product
-            if ($variantId) {
-                $v = ProductVariant::where('id', $variantId)
-                    ->where('product_id', $productId)
-                    ->firstOrFail();
-
-                $attrs = is_array($v->attributes) ? $v->attributes : (json_decode($v->attributes, true) ?: []);
-                $variantLabel = collect($attrs)->map(fn($val, $key) => $key . ': ' . $val)->implode(', ');
-                $price = (float)($v->sale_price ?? $v->regular_price ?? 0);
-
-                $line = $qty * $price;
-                $subtotal += $line;
-
-                $payload[] = [
-                    'product_id' => $p->id,
-                    'variant_id' => $v->id,
-                    'variant_label' => $variantLabel ?: ('Variant #' . $v->id),
-
-                    'product_name' => $p->name,
-                    'sku' => $v->sku ?: $p->sku,
-
-                    'qty' => $qty,
-                    'price' => $price,
-                    'line_total' => $line,
-                ];
-            } else {
-                // simple / downloadable
-                $price = (float)($p->sale_price ?? $p->regular_price ?? 0);
-
-                $line = $qty * $price;
-                $subtotal += $line;
-
-                $payload[] = [
-                    'product_id' => $p->id,
-                    'variant_id' => null,
-                    'variant_label' => null,
-
-                    'product_name' => $p->name,
-                    'sku' => $p->sku,
-
-                    'qty' => $qty,
-                    'price' => $price,
-                    'line_total' => $line,
-                ];
-            }
+            $payload[] = [
+                'product_id' => $p->id,
+                'product_name' => $p->name,
+                'sku' => $p->sku,
+                'qty' => $qty,
+                'price' => $price,
+                'line_total' => $line,
+            ];
         }
 
         return [$subtotal, $payload];
     }
 
-    // Stock check + decrease (variant stock if variant_id exists, otherwise product stock)
     private function decreaseStockOrFail(array $itemsPayload): void
     {
         foreach ($itemsPayload as $row) {
-            $need = (int)($row['qty'] ?? 0);
-            if ($need <= 0) continue;
+            if (empty($row['product_id'])) continue;
 
-            // Variant stock
-            if (!empty($row['variant_id'])) {
-                $v = ProductVariant::where('id', $row['variant_id'])->lockForUpdate()->first();
-                if ($v && $v->stock !== null) {
-                    $have = (int)$v->stock;
-                    if ($need > $have) {
-                        abort(422, "Not enough stock for {$row['product_name']} ({$row['variant_label']}). Available: {$have}");
-                    }
-                    $v->stock = $have - $need;
-                    $v->save();
-                }
-                continue;
-            }
-
-            // Product stock
+            // lock row for safe stock update
             $p = Product::where('id', $row['product_id'])->lockForUpdate()->first();
+
             if ($p && $p->stock !== null) {
+                $need = (int)$row['qty'];
                 $have = (int)$p->stock;
+
                 if ($need > $have) {
                     abort(422, "Not enough stock for {$p->name}. Available: {$have}");
                 }
+
                 $p->stock = $have - $need;
                 $p->save();
             }
@@ -456,13 +405,14 @@ class POSController extends Controller
         $order->load(['items', 'customer', 'payment', 'taxRate']);
         return view('pages.pos.receipts.thermal80', compact('order'));
     }
-
     // Barcode labels
     public function barcodeLabels()
     {
+        // page load
         return view('pages.pos.barcode-labels');
     }
 
+    // AJAX search products for labels
     public function barcodeProducts(Request $request)
     {
         $q = trim((string)$request->get('q', ''));
@@ -492,10 +442,11 @@ class POSController extends Controller
         return response()->json($rows);
     }
 
+    // Print view (server render labels)
     public function barcodeLabelsPrint(Request $request)
     {
         $data = $request->validate([
-            'size' => ['required', 'string'],
+            'size' => ['required', 'string'], // e.g. 38x25, 50x25, 70x30
             'show_price' => ['nullable'],
             'show_sku' => ['nullable'],
             'items' => ['required', 'array', 'min:1'],
@@ -503,6 +454,7 @@ class POSController extends Controller
             'items.*.qty' => ['required', 'integer', 'min:1', 'max:500'],
         ]);
 
+        // map size -> mm
         $sizes = [
             '38x25' => ['w' => 38, 'h' => 25, 'cols' => 3],
             '50x25' => ['w' => 50, 'h' => 25, 'cols' => 2],
@@ -519,9 +471,13 @@ class POSController extends Controller
             $p = $products->get($it['product_id']);
             if (!$p) continue;
 
+            // ensure barcode exists (optional auto-generate)
             $barcode = $p->barcode;
             if (!$barcode) {
+                // generate a stable barcode value using product id + random chunk
                 $barcode = 'SP' . str_pad((string)$p->id, 6, '0', STR_PAD_LEFT) . strtoupper(Str::random(4));
+
+                // only save if column exists
                 if (Schema::hasColumn('products', 'barcode')) {
                     $p->barcode = $barcode;
                     $p->save();

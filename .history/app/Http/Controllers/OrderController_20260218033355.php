@@ -22,16 +22,18 @@ class OrderController extends Controller
 
         $orders = Order::with(['customer', 'payment'])
             ->when($q, function ($qr) use ($q) {
-                $qr->where('order_number', 'like', "%{$q}%")
+                $qr->where('order_number', 'like', "%$q%")
                     ->orWhereHas('customer', function ($c) use ($q) {
-                        $c->where('name', 'like', "%{$q}%")
-                          ->orWhere('email', 'like', "%{$q}%")
-                          ->orWhere('phone', 'like', "%{$q}%");
+                        $c->where('name', 'like', "%$q%")
+                            ->orWhere('email', 'like', "%$q%");
                     });
             })
             ->latest()
             ->paginate(10)
             ->withQueryString();
+
+        $orders = Order::with(['customer', 'payment'])->latest()->paginate(10);
+
 
         return view('pages.crm.orders.index', compact('orders', 'q'));
     }
@@ -49,14 +51,14 @@ class OrderController extends Controller
     {
         $data = $this->validateOrder($request);
 
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data, $request) {
 
             $customer = !empty($data['customer_id'])
                 ? Customer::find($data['customer_id'])
                 : null;
 
-            // ✅ Build items safely (product_id optional)
-            [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
+            // Build items from server-trusted products
+            [$subtotal, $itemsPayload] = $this->buildItemsFromProducts($data['items']);
 
             // Coupon
             [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
@@ -72,10 +74,10 @@ class OrderController extends Controller
 
             $total = max(0, $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount);
 
-            // ✅ Stock deduct only for rows with product_id
-            $this->deductStockOrFail($itemsPayload);
+            // Stock check + deduct (safe)
+            $this->decreaseStockOrFail($itemsPayload);
 
-            // Build order attrs
+            // Build order attributes respecting your schema
             $orderAttrs = [
                 'order_number'     => $this->makeOrderNumber(),
                 'customer_id'      => $customer?->id,
@@ -90,31 +92,39 @@ class OrderController extends Controller
                 'note'             => $data['note'] ?? null,
             ];
 
-            // discount fields
+            // If your orders table has coupon/tax columns, set them. Otherwise map coupon discount to `discount`.
+            if (Schema::hasColumn('orders', 'coupon_id')) {
+                $orderAttrs['coupon_id'] = $couponId;
+            }
+            if (Schema::hasColumn('orders', 'coupon_code')) {
+                $orderAttrs['coupon_code'] = $couponCode;
+            }
+            if (Schema::hasColumn('orders', 'coupon_discount')) {
+                $orderAttrs['coupon_discount'] = $couponDiscount;
+            }
             if (Schema::hasColumn('orders', 'discount')) {
                 $orderAttrs['discount'] = $couponDiscount;
             }
-            if (Schema::hasColumn('orders', 'coupon_id')) $orderAttrs['coupon_id'] = $couponId;
-            if (Schema::hasColumn('orders', 'coupon_code')) $orderAttrs['coupon_code'] = $couponCode;
-            if (Schema::hasColumn('orders', 'coupon_discount')) $orderAttrs['coupon_discount'] = $couponDiscount;
 
-            // tax fields
-            if (Schema::hasColumn('orders', 'tax_rate_id')) $orderAttrs['tax_rate_id'] = $taxRateId;
-            if (Schema::hasColumn('orders', 'tax_amount')) $orderAttrs['tax_amount'] = $taxAmount;
+            if (Schema::hasColumn('orders', 'tax_rate_id')) {
+                $orderAttrs['tax_rate_id'] = $taxRateId;
+            }
+            if (Schema::hasColumn('orders', 'tax_amount')) {
+                $orderAttrs['tax_amount'] = $taxAmount;
+            }
 
             $order = Order::create($orderAttrs);
 
-            // items
+            // Items
             $order->items()->createMany($itemsPayload);
 
-            // payment
+            // Payment calc
             $pay = $data['payment'];
             $amountPaid = (float)($pay['amount_paid'] ?? 0);
             $amountDue  = max(0, $total - $amountPaid);
-
             $paymentStatus = $this->calcPaymentStatus($pay['method'], $amountPaid, $amountDue);
 
-            // Save to order_payments relation (if exists)
+            // Save payment in relation if exists
             if (method_exists($order, 'payment')) {
                 $order->payment()->create([
                     'method'         => $pay['method'],
@@ -126,20 +136,19 @@ class OrderController extends Controller
                 ]);
             }
 
-            // Also sync orders.payment_method/payment_status columns (your migration has these)
+            // Also store payment_method/payment_status in orders table if columns exist (your migration has these)
             $updates = [];
             if (Schema::hasColumn('orders', 'payment_method')) {
                 $updates['payment_method'] = $pay['method'];
             }
             if (Schema::hasColumn('orders', 'payment_status')) {
-                // map to your orders table values
                 $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
             }
             if (!empty($updates)) {
                 $order->update($updates);
             }
 
-            // coupon usage
+            // increment coupon usage
             if ($couponId) {
                 Coupon::where('id', $couponId)->increment('used_count');
             }
@@ -174,16 +183,18 @@ class OrderController extends Controller
                 ? Customer::find($data['customer_id'])
                 : null;
 
-            // ✅ Restore old stock first
-            $oldItems = $order->items()->get()->map(fn($i) => [
-                'product_id' => $i->product_id,
-                'qty'        => (int)$i->qty,
-            ])->toArray();
+            // Restore previous stock first (based on product_id + qty)
+            $oldItems = $order->items()->get()->map(function ($i) {
+                return [
+                    'product_id' => $i->product_id,
+                    'qty'        => (int)$i->qty,
+                ];
+            })->toArray();
 
-            $this->restoreStock($order, $oldItems);
+            $this->restoreStockFromOldItems($order, $oldItems);
 
-            // ✅ Build new items safely
-            [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
+            // Build new items from products
+            [$subtotal, $itemsPayload] = $this->buildItemsFromProducts($data['items']);
 
             // Coupon
             [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
@@ -199,8 +210,8 @@ class OrderController extends Controller
 
             $total = max(0, $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount);
 
-            // ✅ Deduct stock for new items
-            $this->deductStockOrFail($itemsPayload);
+            // Stock check + deduct for new items
+            $this->decreaseStockOrFail($itemsPayload);
 
             // Update order
             $orderAttrs = [
@@ -216,10 +227,11 @@ class OrderController extends Controller
                 'note'             => $data['note'] ?? null,
             ];
 
-            if (Schema::hasColumn('orders', 'discount')) $orderAttrs['discount'] = $couponDiscount;
+            // coupon/tax fields (if exist)
             if (Schema::hasColumn('orders', 'coupon_id')) $orderAttrs['coupon_id'] = $couponId;
             if (Schema::hasColumn('orders', 'coupon_code')) $orderAttrs['coupon_code'] = $couponCode;
             if (Schema::hasColumn('orders', 'coupon_discount')) $orderAttrs['coupon_discount'] = $couponDiscount;
+            if (Schema::hasColumn('orders', 'discount')) $orderAttrs['discount'] = $couponDiscount;
 
             if (Schema::hasColumn('orders', 'tax_rate_id')) $orderAttrs['tax_rate_id'] = $taxRateId;
             if (Schema::hasColumn('orders', 'tax_amount')) $orderAttrs['tax_amount'] = $taxAmount;
@@ -250,11 +262,17 @@ class OrderController extends Controller
                 );
             }
 
-            // sync orders.payment fields
+            // Also keep orders table payment fields in sync if columns exist
             $updates = [];
-            if (Schema::hasColumn('orders', 'payment_method')) $updates['payment_method'] = $pay['method'];
-            if (Schema::hasColumn('orders', 'payment_status')) $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
-            if (!empty($updates)) $order->update($updates);
+            if (Schema::hasColumn('orders', 'payment_method')) {
+                $updates['payment_method'] = $pay['method'];
+            }
+            if (Schema::hasColumn('orders', 'payment_status')) {
+                $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
+            }
+            if (!empty($updates)) {
+                $order->update($updates);
+            }
 
             return back()->with('success', 'Order updated successfully!');
         });
@@ -264,13 +282,15 @@ class OrderController extends Controller
     {
         return DB::transaction(function () use ($order) {
 
-            // Restore stock
-            $oldItems = $order->items()->get()->map(fn($i) => [
-                'product_id' => $i->product_id,
-                'qty'        => (int)$i->qty,
-            ])->toArray();
+            // Restore stock (recommended)
+            $oldItems = $order->items()->get()->map(function ($i) {
+                return [
+                    'product_id' => $i->product_id,
+                    'qty'        => (int)$i->qty,
+                ];
+            })->toArray();
 
-            $this->restoreStock($order, $oldItems);
+            $this->restoreStockFromOldItems($order, $oldItems);
 
             $order->delete();
 
@@ -294,72 +314,51 @@ class OrderController extends Controller
             'shipping_address' => ['nullable', 'string', 'max:4000'],
             'note'             => ['nullable', 'string', 'max:4000'],
 
-            'items'                 => ['required', 'array', 'min:1'],
-            'items.*.product_id'    => ['nullable', 'integer', 'exists:products,id'],
-            'items.*.product_name'  => ['required', 'string', 'max:200'],
-            'items.*.sku'           => ['nullable', 'string', 'max:120'],
-            'items.*.qty'           => ['required', 'integer', 'min:1'],
-            'items.*.price'         => ['required', 'numeric', 'min:0'],
+            'items'            => ['required', 'array', 'min:1'],
+            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.qty'      => ['required', 'integer', 'min:1'],
+            'items.*.price'    => ['required', 'numeric', 'min:0'],
 
-            'payment'                       => ['required', 'array'],
-            'payment.method'                => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
-            'payment.amount_paid'           => ['nullable', 'numeric', 'min:0'],
-            'payment.transaction_id'        => [
-                'nullable',
-                'string',
-                'max:120',
-                Rule::requiredIf(fn() => in_array($request->input('payment.method'), ['bkash', 'nagad', 'rocket'])),
-            ],
+            'payment.method'   => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
+            'payment.transaction_id' => ['nullable', 'string', 'max:120'],
+            'payment.amount_paid'    => ['nullable', 'numeric', 'min:0'],
         ], [
-            'items.required'                  => 'At least one item is required.',
-            'items.*.product_name.required'   => 'Product name is required for each item.',
-            'payment.transaction_id.required' => 'Transaction ID is required for bKash/Nagad/Rocket.',
+            'items.*.product_id.required' => 'Product is required for each item.',
+            'payment.method.required'     => 'Payment method is required.',
         ]);
     }
 
-    // ---------------- ITEMS (SAFE) ----------------
+    // ---------------- ITEMS (SERVER TRUSTED) ----------------
 
     /**
-     * ✅ SAFE builder:
-     * - If product_id exists and product exists: fill name/sku from DB
-     * - If product_id missing or product deleted: keep manual name/sku
-     * - NEVER abort(422) for missing product
+     * Build items from DB products. This ensures product_id is saved correctly,
+     * and product_name/sku are always valid.
      */
-    private function buildItemsSafe(array $items): array
+    private function buildItemsFromProducts(array $items): array
     {
         $payload = [];
         $subtotal = 0.0;
 
-        $productIds = collect($items)
-            ->pluck('product_id')
-            ->filter()
-            ->unique()
-            ->values();
-
+        $productIds = collect($items)->pluck('product_id')->unique()->values();
         $products = Product::whereIn('id', $productIds)->get()->keyBy('id');
 
         foreach ($items as $it) {
-            $pid = !empty($it['product_id']) ? (int)$it['product_id'] : null;
-            $p = $pid ? $products->get($pid) : null;
+            $pid = (int)$it['product_id'];
+            $qty = (int)$it['qty'];
+            $price = (float)$it['price'];
 
-            // If product not found, treat as manual item
-            if ($pid && !$p) {
-                $pid = null;
+            $p = $products->get($pid);
+            if (!$p) {
+                abort(422, "Invalid product selected.");
             }
-
-            $qty   = max(1, (int)($it['qty'] ?? 1));
-            $price = (float)($it['price'] ?? 0);
-
-            $name = $p?->name ?? ($it['product_name'] ?? '');
-            $sku  = $p?->sku  ?? ($it['sku'] ?? null);
 
             $line = $qty * $price;
             $subtotal += $line;
 
             $payload[] = [
-                'product_id'   => $pid,
-                'product_name' => $name,
-                'sku'          => $sku,
+                'product_id'   => $p->id,
+                'product_name' => $p->name,
+                'sku'          => $p->sku,
                 'qty'          => $qty,
                 'price'        => $price,
                 'line_total'   => $line,
@@ -369,63 +368,73 @@ class OrderController extends Controller
         return [round($subtotal, 2), $payload];
     }
 
-    // ---------------- STOCK (NO DOUBLE DEDUCT) ----------------
+    // ---------------- STOCK ----------------
 
-    private function deductStockOrFail(array $itemsPayload): void
+    private function decreaseStockOrFail(array $itemsPayload): void
     {
         foreach ($itemsPayload as $row) {
-            $pid = $row['product_id'] ?? null;
-            if (!$pid) continue;
+            if (empty($row['product_id'])) continue;
 
-            $p = Product::where('id', $pid)->lockForUpdate()->first();
+            $p = Product::where('id', $row['product_id'])->lockForUpdate()->first();
             if (!$p) continue;
 
-            $need = (int)($row['qty'] ?? 0);
-            if ($need <= 0) continue;
+            if ($p->stock !== null) {
+                $need = (int)$row['qty'];
+                $have = (int)$p->stock;
 
-            // check stock only if finite
-            if ($p->stock !== null && $need > (int)$p->stock) {
-                abort(422, "Not enough stock for {$p->name}. Available: {$p->stock}");
+                if ($need > $have) {
+                    abort(422, "Not enough stock for {$p->name}. Available: {$have}");
+                }
+
+                // If you want direct subtraction (simple):
+                $p->stock = $have - $need;
+                $p->save();
             }
 
-            // ✅ Choose ONE method to change stock:
-            // If you use StockService ledger, let it control stock.
+            // If you use StockService ledger, keep it too:
             if (class_exists(StockService::class) && method_exists(StockService::class, 'move')) {
-                StockService::move($p, 'out', $need, null, 'Order stock deducted', null);
-            } else {
-                // direct subtraction
-                if ($p->stock !== null) {
-                    $p->stock = (int)$p->stock - $need;
-                    $p->save();
-                }
+                StockService::move(
+                    $p,
+                    'out',
+                    (int)$row['qty'],
+                    null,
+                    'Order stock deducted',
+                    null
+                );
             }
         }
     }
 
-    private function restoreStock(Order $order, array $oldItems): void
+    private function restoreStockFromOldItems(Order $order, array $oldItems): void
     {
         foreach ($oldItems as $it) {
-            $pid = $it['product_id'] ?? null;
-            if (!$pid) continue;
+            if (empty($it['product_id'])) continue;
 
-            $p = Product::where('id', $pid)->lockForUpdate()->first();
+            $p = Product::where('id', $it['product_id'])->lockForUpdate()->first();
             if (!$p) continue;
 
-            $qty = (int)($it['qty'] ?? 0);
+            $qty = (int)$it['qty'];
             if ($qty <= 0) continue;
 
+            if ($p->stock !== null) {
+                $p->stock = ((int)$p->stock) + $qty;
+                $p->save();
+            }
+
             if (class_exists(StockService::class) && method_exists(StockService::class, 'move')) {
-                StockService::move($p, 'in', $qty, $order->id, 'Order stock restored', $order->order_number);
-            } else {
-                if ($p->stock !== null) {
-                    $p->stock = (int)$p->stock + $qty;
-                    $p->save();
-                }
+                StockService::move(
+                    $p,
+                    'in',
+                    $qty,
+                    $order->id,
+                    'Order edited/deleted (stock restored)',
+                    $order->order_number
+                );
             }
         }
     }
 
-    // ---------------- COUPON / TAX / PAYMENT ----------------
+    // ---------------- COUPON / TAX / PAYMENT HELPERS ----------------
 
     private function applyCoupon(?string $code, float $subtotal): array
     {
@@ -460,12 +469,12 @@ class OrderController extends Controller
         $tax = TaxRate::where('id', $taxRateId)->where('is_active', true)->first();
         if (!$tax) return [null, 0.0];
 
-        $rate = (float)$tax->rate;
-
         if ($tax->mode === 'exclusive') {
-            return [$tax->id, round(($base * $rate) / 100.0, 2)];
+            $amount = ($base * (float)$tax->rate) / 100.0;
+            return [$tax->id, round($amount, 2)];
         }
 
+        $rate = (float)$tax->rate;
         if ($rate <= 0) return [$tax->id, 0.0];
 
         $div = 1 + ($rate / 100.0);
@@ -474,17 +483,13 @@ class OrderController extends Controller
         return [$tax->id, round($taxPart, 2)];
     }
 
-    /**
-     * ✅ Better payment status:
-     * - cod => pending
-     * - digital => paid/partial/unpaid based on due/paid
-     */
     private function calcPaymentStatus(string $method, float $paid, float $due): string
     {
+        // COD => pending until delivered/collected
         if ($method === 'cod') return 'pending';
-        if ($paid <= 0 && $due > 0) return 'unpaid';
-        if ($due <= 0.00001 && $paid > 0) return 'paid';
-        return 'partial';
+
+        // Digital => paid only if fully covered and >0
+        return ($due <= 0.00001 && $paid > 0) ? 'paid' : 'pending';
     }
 
     private function makeOrderNumber(): string

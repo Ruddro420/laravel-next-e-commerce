@@ -75,7 +75,7 @@
           placeholder="Purchase / Damage / Manual..." />
       </div>
 
-      <div class="flex items-center mt-3">
+      <div class="flex items-center">
         <button
           class="w-full rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900">
           Update Stock

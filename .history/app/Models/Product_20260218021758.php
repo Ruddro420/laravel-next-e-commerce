@@ -55,10 +55,4 @@ class Product extends Model
             'attribute_value_id'
         )->withPivot('attribute_id')->withTimestamps();
     }
-     public function stockMovements()
-    {
-        return $this->hasMany(\App\Models\StockMovement::class);
-        // If your FK is not product_id, use:
-        // return $this->hasMany(StockMovement::class, 'product_id');
-    }
 }

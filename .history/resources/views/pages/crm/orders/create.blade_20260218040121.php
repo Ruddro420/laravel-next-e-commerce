@@ -2,7 +2,7 @@
 @section('title','Add Order')
 @section('subtitle','CRM')
 @section('pageTitle','Add Order')
-@section('pageDesc','POS style order create with product attributes.')
+@section('pageDesc','Create order with tax and payment.')
 
 @section('content')
 <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:bg-slate-900 dark:border-slate-800">
@@ -53,12 +53,12 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
         <label class="text-sm font-semibold">Billing Address</label>
-        <textarea id="billingAddr" name="billing_address" rows="3"
+        <textarea id="billingAddr" name="billing_address" rows="4"
           class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">{{ old('billing_address') }}</textarea>
       </div>
       <div>
         <label class="text-sm font-semibold">Shipping Address</label>
-        <textarea id="shippingAddr" name="shipping_address" rows="3"
+        <textarea id="shippingAddr" name="shipping_address" rows="4"
           class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">{{ old('shipping_address') }}</textarea>
       </div>
     </div>
@@ -67,8 +67,8 @@
     <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
       <div class="flex items-center justify-between">
         <div>
-          <div class="font-semibold">Order Items (POS)</div>
-          <div class="text-xs text-slate-500 dark:text-slate-400">Select product → attributes show like POS.</div>
+          <div class="font-semibold">Order Items</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400">Select product → auto fills name/sku/price. You can change price if needed.</div>
         </div>
         <button type="button" id="btnAddItem"
           class="rounded-2xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white dark:bg-white dark:text-slate-900">
@@ -142,7 +142,7 @@
 
     {{-- Summary --}}
     <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-      <div class="font-semibold mb-2">Summary</div>
+      <div class="font-semibold mb-2">Summary (Live)</div>
       <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
         <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <div class="text-xs text-slate-500 dark:text-slate-400">Subtotal</div>
@@ -167,6 +167,12 @@
       </div>
     </div>
 
+    <div>
+      <label class="text-sm font-semibold">Note</label>
+      <textarea name="note" rows="3"
+        class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">{{ old('note') }}</textarea>
+    </div>
+
     <div class="flex justify-end gap-2">
       <a href="{{ route('crm.orders') }}"
         class="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800">
@@ -180,26 +186,16 @@
 </div>
 
 @php
-  /**
-   * IMPORTANT:
-   * Your Product model must provide attributes structure.
-   * Example structure (recommended):
-   * $product->attributes_json = [
-   *    { "name":"Size", "options":[{"value":"S","price":0},{"value":"M","price":10}] },
-   *    { "name":"Color", "options":[{"value":"Red","price":0},{"value":"Black","price":0}] }
-   * ];
-   *
-   * If your DB stores as json column: attributes_json
-   */
+  // ✅ POS style product payload
   $productsJs = $products->map(fn($p) => [
     'id' => $p->id,
     'name' => $p->name,
     'sku' => $p->sku,
     'price' => (float)($p->sale_price ?? $p->regular_price ?? $p->price ?? 0),
-    'stock' => $p->stock ?? null,
-    'attributes' => $p->attributes_json ?? [], // ✅ must be array
+    'stock' => $p->stock, // optional
   ])->values();
 
+  // ✅ repopulate old items after validation error
   $oldItems = old('items', []);
 @endphp
 
@@ -254,36 +250,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return html;
   }
 
-  function renderAttributes(i, attrs = [], selected = {}) {
-    if (!Array.isArray(attrs) || attrs.length === 0) return '';
-
-    return `
-      <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3" data-attrs>
-        ${attrs.map((a, idx) => {
-          const key = a.name || ('Attr '+(idx+1));
-          const options = Array.isArray(a.options) ? a.options : [];
-          const selectedVal = selected?.[key] ?? '';
-
-          return `
-            <div>
-              <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">${escapeHtml(key)}</label>
-              <select name="items[${i}][attributes][${escapeHtml(key)}]" data-attr-select data-attr-name="${escapeHtml(key)}"
-                class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">
-                <option value="">Select</option>
-                ${options.map(op => {
-                  const val = op.value ?? op;
-                  const price = op.price ?? 0;
-                  const sel = String(selectedVal) === String(val) ? 'selected' : '';
-                  return `<option value="${escapeHtml(val)}" data-price="${price}" ${sel}>${escapeHtml(val)}${price ? ' (+৳'+price+')' : ''}</option>`;
-                }).join('')}
-              </select>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-  }
-
   let idx = 0;
 
   function row(i, data = null){
@@ -292,7 +258,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const price = data?.price ?? 0;
     const name = data?.product_name ?? '';
     const sku = data?.sku ?? '';
-    const selectedAttrs = data?.attributes ?? {};
 
     return `
       <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-800" data-item>
@@ -315,7 +280,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Product Name</label>
             <input name="items[${i}][product_name]" data-name required
               value="${escapeHtml(name)}"
-              class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
+              class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800"
+              placeholder="Auto filled when product selected" />
           </div>
 
           <div>
@@ -343,14 +309,6 @@ document.addEventListener('DOMContentLoaded', () => {
               class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:bg-slate-800 dark:border-slate-700" />
           </div>
         </div>
-
-        <div class="mt-2" data-attrs-wrap>
-          {{-- attributes render here --}}
-        </div>
-
-        <div class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          POS Tip: Attributes can change price automatically.
-        </div>
       </div>
     `;
   }
@@ -368,47 +326,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const skuEl = itemEl.querySelector('[data-sku]');
     const priceEl = itemEl.querySelector('[data-price]');
     const stockLabel = itemEl.querySelector('[data-stocklabel]');
-    const attrsWrap = itemEl.querySelector('[data-attrs-wrap]');
 
     if(!p){
+      // keep manual name/sku/price (POS-style)
       stockLabel.textContent = 'Stock: —';
-      attrsWrap.innerHTML = '';
       return;
     }
 
-    // fill base
     nameEl.value = p.name || '';
     skuEl.value = p.sku || '';
     priceEl.value = Number(p.price || 0).toFixed(2);
 
     const stockTxt = (p.stock === null || typeof p.stock === 'undefined') ? '∞' : p.stock;
     stockLabel.textContent = `Stock: ${stockTxt}`;
-
-    // render attributes UI
-    const i = itemEl.dataset.index;
-    const html = renderAttributes(i, p.attributes || [], {});
-    attrsWrap.innerHTML = html;
-
-    // after rendering attrs, recalc price based on attr prices
-    applyAttributePrice(itemEl);
-  }
-
-  function applyAttributePrice(itemEl){
-    const priceEl = itemEl.querySelector('[data-price]');
-    const pid = itemEl.querySelector('[data-product]').value;
-    const p = productMap.get(String(pid));
-    if(!p) return;
-
-    let base = Number(p.price || 0);
-    let add = 0;
-
-    itemEl.querySelectorAll('[data-attr-select]').forEach(sel => {
-      const opt = sel.options[sel.selectedIndex];
-      const extra = Number(opt?.dataset.price || 0);
-      add += extra;
-    });
-
-    priceEl.value = (base + add).toFixed(2);
   }
 
   function calc(){
@@ -452,22 +382,17 @@ document.addEventListener('DOMContentLoaded', () => {
     sumDue.textContent = due.toFixed(2);
   }
 
-  function addRow(data=null){
+  function addRow(data = null){
     itemsWrap.insertAdjacentHTML('beforeend', row(idx, data));
     const itemEl = itemsWrap.lastElementChild;
-
-    itemEl.dataset.index = idx; // ✅ store index for attribute render
     idx++;
 
-    // If already has product_id, load product + attributes
-    const pid = itemEl.querySelector('[data-product]')?.value;
-    if(pid){
-      fillFromProduct(itemEl);
-    }
-
+    // ✅ IMPORTANT: auto-fill immediately for existing/old items
+    fillFromProduct(itemEl);
     calc();
   }
 
+  // Add / Remove
   btnAddItem.addEventListener('click', (e) => {
     e.preventDefault();
     addRow(null);
@@ -480,19 +405,10 @@ document.addEventListener('DOMContentLoaded', () => {
     calc();
   });
 
-  // product changed
+  // Events
   itemsWrap.addEventListener('change', (e) => {
     if(e.target.matches('[data-product]')){
-      const itemEl = e.target.closest('[data-item]');
-      fillFromProduct(itemEl);
-      calc();
-      return;
-    }
-
-    // attribute changed -> update price
-    if(e.target.matches('[data-attr-select]')){
-      const itemEl = e.target.closest('[data-item]');
-      applyAttributePrice(itemEl);
+      fillFromProduct(e.target.closest('[data-item]'));
       calc();
     }
   });
@@ -505,9 +421,10 @@ document.addEventListener('DOMContentLoaded', () => {
   taxSelect?.addEventListener('change', calc);
   payMethod?.addEventListener('change', syncPay);
 
+  // Init
   syncPay();
 
-  // initial rows
+  // ✅ POS: if validation failed, restore items. Otherwise add 1 row.
   if(Array.isArray(existingItems) && existingItems.length){
     existingItems.forEach(it => addRow(it));
   } else {

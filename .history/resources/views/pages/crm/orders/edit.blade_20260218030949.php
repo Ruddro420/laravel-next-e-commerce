@@ -32,7 +32,7 @@
         <label class="text-sm font-semibold">Customer</label>
         <select id="customerSelect" name="customer_id"
           class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">
-          <option value="">Walk-in</option>
+          <option value="">Select customer</option>
           @foreach($customers as $c)
             <option value="{{ $c->id }}"
               data-billing="{{ e($c->billing_address ?? '') }}"
@@ -46,9 +46,9 @@
 
       <div>
         <label class="text-sm font-semibold">Order Status</label>
-        @php $st = old('status',$order->status); @endphp
         <select name="status"
           class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">
+          @php $st = old('status',$order->status); @endphp
           <option value="processing" {{ $st==='processing'?'selected':'' }}>Processing</option>
           <option value="complete" {{ $st==='complete'?'selected':'' }}>Complete</option>
           <option value="hold" {{ $st==='hold'?'selected':'' }}>Hold</option>
@@ -75,23 +75,24 @@
       <div class="flex items-center justify-between">
         <div>
           <div class="font-semibold">Order Items</div>
-          <div class="text-xs text-slate-500 dark:text-slate-400">Edit items and totals update instantly.</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400">Update qty or price and totals update instantly.</div>
         </div>
         <button type="button" id="btnAddItem"
           class="rounded-2xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white dark:bg-white dark:text-slate-900">
           + Add Item
         </button>
       </div>
-
       <div id="itemsWrap" class="mt-4 space-y-3"></div>
     </div>
 
-    {{-- Shipping + Tax --}}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {{-- Coupon + Tax + Shipping --}}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div>
-        <label class="text-sm font-semibold">Shipping</label>
-        <input id="shipping" name="shipping" type="number" step="0.01" value="{{ old('shipping',$order->shipping) }}"
-          class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
+        <label class="text-sm font-semibold">Coupon Code</label>
+        <input id="couponCode" name="coupon_code" value="{{ old('coupon_code',$order->coupon_code) }}"
+          class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800"
+          placeholder="SAVE10 (optional)" />
+        <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">Discount is validated on Save.</div>
       </div>
 
       <div>
@@ -107,18 +108,22 @@
           @endforeach
         </select>
       </div>
+
+      <div>
+        <label class="text-sm font-semibold">Shipping</label>
+        <input id="shipping" name="shipping" type="number" step="0.01" value="{{ old('shipping',$order->shipping) }}"
+          class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
+      </div>
     </div>
 
     {{-- Payment --}}
     @php
       $pm = old('payment.method', $order->payment?->method ?? 'cod');
       $trx = old('payment.transaction_id', $order->payment?->transaction_id ?? '');
-      $paidVal = old('payment.amount_paid', $order->payment?->amount_paid ?? 0);
+      $paid = old('payment.amount_paid', $order->payment?->amount_paid ?? 0);
     @endphp
-
     <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
       <div class="font-semibold">Payment</div>
-
       <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label class="text-sm font-semibold">Method</label>
@@ -131,23 +136,24 @@
           </select>
         </div>
 
-        <div id="trxWrap" class="{{ in_array($pm,['bkash','nagad','rocket']) ? '' : 'hidden' }}">
+        <div id="trxWrap" class="hidden">
           <label class="text-sm font-semibold">Transaction ID</label>
           <input id="trxId" name="payment[transaction_id]" value="{{ $trx }}"
-            class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
+            class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800"
+            placeholder="TXN id" />
         </div>
 
         <div>
           <label class="text-sm font-semibold">Amount Paid</label>
-          <input id="amountPaid" name="payment[amount_paid]" type="number" step="0.01" value="{{ $paidVal }}"
+          <input id="amountPaid" name="payment[amount_paid]" type="number" step="0.01" value="{{ $paid }}"
             class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
         </div>
       </div>
     </div>
 
-    {{-- Summary --}}
+    {{-- Summary Preview --}}
     <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-      <div class="font-semibold mb-2">Summary (Live)</div>
+      <div class="font-semibold mb-2">Summary (Preview)</div>
       <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
         <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <div class="text-xs text-slate-500 dark:text-slate-400">Subtotal</div>
@@ -170,6 +176,15 @@
           <div id="sumDue" class="font-semibold">0.00</div>
         </div>
       </div>
+      <div class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        Coupon discount is recalculated server-side when you update.
+      </div>
+    </div>
+
+    <div>
+      <label class="text-sm font-semibold">Note</label>
+      <textarea name="note" rows="3"
+        class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">{{ old('note',$order->note) }}</textarea>
     </div>
 
     <div class="flex justify-end gap-2">
@@ -191,28 +206,25 @@
       'name'  => $p->name,
       'sku'   => $p->sku,
       'price' => (float)($p->sale_price ?? $p->regular_price ?? 0),
-      'stock' => (int)($p->stock ?? 0),
+      'stock' => is_null($p->stock) ? null : (int)$p->stock,
     ];
   })->values()->toArray();
 @endphp
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function () {
   const products = @json($productsJs);
   const productMap = new Map(products.map(p => [String(p.id), p]));
 
-  // existing items from DB
   const existingItems = @json($order->items);
+  const existingPaid = Number(@json($order->payment?->amount_paid ?? 0));
 
-  const itemsWrap = document.getElementById('itemsWrap');
-  const btnAddItem = document.getElementById('btnAddItem');
+  const wrap = document.getElementById('itemsWrap');
+  const btnAdd = document.getElementById('btnAddItem');
 
   const shipping = document.getElementById('shipping');
   const taxSelect = document.getElementById('taxSelect');
-
-  const payMethod = document.getElementById('payMethod');
-  const trxWrap = document.getElementById('trxWrap');
-  const amountPaid = document.getElementById('amountPaid');
+  const paid = document.getElementById('amountPaid');
 
   const sumSubtotal = document.getElementById('sumSubtotal');
   const sumTax = document.getElementById('sumTax');
@@ -220,15 +232,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const sumPaid = document.getElementById('sumPaid');
   const sumDue = document.getElementById('sumDue');
 
-  const customerSelect = document.getElementById('customerSelect');
-  const billingAddr = document.getElementById('billingAddr');
-  const shippingAddr = document.getElementById('shippingAddr');
+  const method = document.getElementById('payMethod');
+  const trxWrap = document.getElementById('trxWrap');
 
-  customerSelect?.addEventListener('change', () => {
-    const opt = customerSelect.options[customerSelect.selectedIndex];
-    billingAddr.value = opt?.dataset.billing || '';
-    shippingAddr.value = opt?.dataset.shipping || '';
-  });
+  // set paid initial
+  if (paid && !paid.value) paid.value = existingPaid;
 
   function escapeHtml(s){
     return String(s ?? '')
@@ -239,11 +247,12 @@ document.addEventListener('DOMContentLoaded', () => {
       .replaceAll("'","&#039;");
   }
 
-  function productOptionsHtml(selectedId = ''){
-    let html = `<option value="">(Keep manual item)</option>`;
-    products.forEach(p => {
+  function productOptionsHtml(selectedId){
+    let html = `<option value="">Select product</option>`;
+    products.forEach(p=>{
+      const stockTxt = (p.stock === null) ? '∞' : p.stock;
+      const label = `${p.name}${p.sku ? ' — '+p.sku : ''} (Stock: ${stockTxt})`;
       const sel = String(selectedId) === String(p.id) ? 'selected' : '';
-      const label = `${p.name}${p.sku ? ' — '+p.sku : ''} (Stock: ${p.stock})`;
       html += `<option value="${p.id}" ${sel}>${escapeHtml(label)}</option>`;
     });
     return html;
@@ -253,10 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function row(i, data = null){
     const pid = data?.product_id ?? '';
-    const name = data?.product_name ?? '';
-    const sku  = data?.sku ?? '';
-    const qty  = data?.qty ?? 1;
-    const price = data?.price ?? 0;
+    const qty = data?.qty ?? 1;
 
     return `
       <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-800" data-item>
@@ -268,29 +274,23 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="mt-3 grid grid-cols-1 md:grid-cols-6 gap-3">
           <div class="md:col-span-2">
             <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Product</label>
-
-            <!-- IMPORTANT: select is optional for old/manual items -->
             <select name="items[${i}][product_id]" data-product
               class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">
               ${productOptionsHtml(pid)}
             </select>
-
-            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-stocklabel>
-              Stock: —
-            </div>
+            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-stocklabel>Stock: —</div>
           </div>
 
           <div class="md:col-span-2">
-            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Product Name</label>
-            <input name="items[${i}][product_name]" data-name required
-              value="${escapeHtml(name)}"
-              class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Product Name (auto)</label>
+            <input name="items[${i}][product_name]" data-name required readonly
+              class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:bg-slate-800 dark:border-slate-700" />
           </div>
 
           <div>
-            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">SKU</label>
-            <input name="items[${i}][sku]" data-sku value="${escapeHtml(sku)}"
-              class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">SKU (auto)</label>
+            <input name="items[${i}][sku]" data-sku readonly
+              class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:bg-slate-800 dark:border-slate-700" />
           </div>
 
           <div>
@@ -300,13 +300,13 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
 
           <div>
-            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Price</label>
-            <input name="items[${i}][price]" type="number" step="0.01" min="0" value="${price}" required data-price
-              class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Price (auto)</label>
+            <input name="items[${i}][price]" type="number" step="0.01" min="0" value="0" required data-price readonly
+              class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:bg-slate-800 dark:border-slate-700" />
           </div>
 
           <div>
-            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Line</label>
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Line Total</label>
             <input type="text" readonly value="0.00" data-line
               class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:bg-slate-800 dark:border-slate-700" />
           </div>
@@ -315,9 +315,8 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
   }
 
-  function fillFromProduct(itemEl){
-    const sel = itemEl.querySelector('[data-product]');
-    const pid = sel?.value || '';
+  function fillRowFromProduct(itemEl){
+    const pid = itemEl.querySelector('[data-product]')?.value || '';
     const p = productMap.get(String(pid));
 
     const nameInput = itemEl.querySelector('[data-name]');
@@ -327,45 +326,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const qtyInput = itemEl.querySelector('[data-qty]');
 
     if(!p){
+      nameInput.value = '';
+      skuInput.value = '';
+      priceInput.value = '0.00';
       stockLabel.textContent = 'Stock: —';
-      // DO NOT clear manual fields (important for old orders)
       return;
     }
 
     nameInput.value = p.name || '';
     skuInput.value = p.sku || '';
     priceInput.value = Number(p.price || 0).toFixed(2);
-    stockLabel.textContent = `Stock: ${p.stock}`;
 
-    const q = parseInt(qtyInput.value || '1', 10);
-    if(q > p.stock) qtyInput.value = Math.max(1, p.stock);
-  }
+    const stockTxt = (p.stock === null) ? '∞' : p.stock;
+    stockLabel.textContent = `Stock: ${stockTxt}`;
 
-  function syncPay(){
-    const m = payMethod?.value;
-    const needTrx = (m === 'bkash' || m === 'nagad' || m === 'rocket');
-    trxWrap?.classList.toggle('hidden', !needTrx);
+    if(p.stock !== null){
+      const q = parseInt(qtyInput.value || '1', 10);
+      if(q > p.stock) qtyInput.value = Math.max(1, p.stock);
+    }
   }
 
   function calc(){
     let subtotal = 0;
 
-    itemsWrap.querySelectorAll('[data-item]').forEach(item => {
-      fillFromProduct(item);
+    wrap.querySelectorAll('[data-item]').forEach(item=>{
+      fillRowFromProduct(item);
 
-      const qty = Number(item.querySelector('[data-qty]')?.value || 0);
-      const price = Number(item.querySelector('[data-price]')?.value || 0);
+      const qty = parseFloat(item.querySelector('[data-qty]').value || 0);
+      const price = parseFloat(item.querySelector('[data-price]').value || 0);
       const line = qty * price;
-
       subtotal += line;
       item.querySelector('[data-line]').value = line.toFixed(2);
     });
 
-    const ship = Number(shipping?.value || 0);
-
+    const ship = parseFloat(shipping?.value || 0);
     const taxOpt = taxSelect?.options[taxSelect.selectedIndex];
-    const rate = Number(taxOpt?.dataset.rate || 0);
-    const mode = (taxOpt?.dataset.mode || 'exclusive');
+    const rate = parseFloat(taxOpt?.dataset.rate || 0);
+    const mode = taxOpt?.dataset.mode || 'exclusive';
 
     const base = subtotal + ship;
     let tax = 0;
@@ -380,62 +377,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const total = (mode === 'inclusive') ? base : (base + tax);
-
-    const paid = Number(amountPaid?.value || 0);
-    const due = Math.max(0, total - paid);
+    const paidVal = parseFloat(paid?.value || 0);
+    const due = Math.max(0, total - paidVal);
 
     sumSubtotal.textContent = subtotal.toFixed(2);
     sumTax.textContent = tax.toFixed(2);
     sumTotal.textContent = total.toFixed(2);
-    sumPaid.textContent = paid.toFixed(2);
+    sumPaid.textContent = paidVal.toFixed(2);
     sumDue.textContent = due.toFixed(2);
   }
 
-  // Add item
-  btnAddItem?.addEventListener('click', (e) => {
+  // add
+  btnAdd.addEventListener('click', (e)=>{
     e.preventDefault();
-    itemsWrap.insertAdjacentHTML('beforeend', row(idx));
+    wrap.insertAdjacentHTML('beforeend', row(idx));
     idx++;
     calc();
   });
 
-  // Remove item
-  itemsWrap?.addEventListener('click', (e) => {
+  // remove
+  wrap.addEventListener('click', (e)=>{
     const rm = e.target.closest('[data-remove]');
     if(!rm) return;
     rm.closest('[data-item]').remove();
     calc();
   });
 
-  // Recalc on changes
-  itemsWrap?.addEventListener('change', (e) => {
+  // events
+  wrap.addEventListener('change', (e)=>{
     if(e.target.matches('[data-product]')) calc();
   });
-
-  itemsWrap?.addEventListener('input', (e) => {
-    if(e.target.matches('[data-qty],[data-price]')) calc();
+  wrap.addEventListener('input', (e)=>{
+    if(e.target.matches('[data-qty]')) calc();
   });
-
-  [shipping, taxSelect, amountPaid].forEach(el => {
-    el?.addEventListener('input', calc);
+  [shipping, taxSelect, paid].forEach(el=>{
+    if(el) el.addEventListener('input', calc);
   });
-  taxSelect?.addEventListener('change', calc);
+  if(taxSelect) taxSelect.addEventListener('change', calc);
 
-  payMethod?.addEventListener('change', syncPay);
+  // payment toggle
+  function syncPay(){
+    const m = method?.value;
+    const needTrx = (m === 'bkash' || m === 'nagad' || m === 'rocket');
+    trxWrap?.classList.toggle('hidden', !needTrx);
+  }
+  method?.addEventListener('change', syncPay);
   syncPay();
 
-  // Render existing items
+  // render existing
   if(Array.isArray(existingItems) && existingItems.length){
-    existingItems.forEach(it => {
-      itemsWrap.insertAdjacentHTML('beforeend', row(idx, it));
+    existingItems.forEach(it=>{
+      wrap.insertAdjacentHTML('beforeend', row(idx, it));
       idx++;
     });
   } else {
-    btnAddItem?.click();
+    btnAdd.click();
   }
 
-  // First calc
   calc();
 });
 </script>
+
 @endsection

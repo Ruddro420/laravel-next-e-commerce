@@ -25,27 +25,25 @@ class Product extends Model
         'is_active'
     ];
 
-    public function category()
-    {
-        return $this->belongsTo(\App\Models\Category::class, 'category_id');
-    }
-
-    public function brand()
-    {
-        return $this->belongsTo(\App\Models\Brand::class, 'brand_id');
-    }
-
     public function gallery()
     {
-        return $this->hasMany(\App\Models\ProductGallery::class);
+        return $this->hasMany(ProductGallery::class);
     }
 
     public function variants()
     {
-        return $this->hasMany(\App\Models\ProductVariant::class);
+        return $this->hasMany(ProductVariant::class);
     }
-
-    // ✅ if you created pivot table product_attribute_values
+    // For Reviews
+    public function reviews()
+    {
+        return $this->hasMany(\App\Models\Review::class);
+    }
+    public function stockMovements()
+    {
+        return $this->hasMany(\App\Models\StockMovement::class);
+    }
+    // For attributes
     public function attributeValues()
     {
         return $this->belongsToMany(
@@ -54,11 +52,5 @@ class Product extends Model
             'product_id',
             'attribute_value_id'
         )->withPivot('attribute_id')->withTimestamps();
-    }
-     public function stockMovements()
-    {
-        return $this->hasMany(\App\Models\StockMovement::class);
-        // If your FK is not product_id, use:
-        // return $this->hasMany(StockMovement::class, 'product_id');
     }
 }
