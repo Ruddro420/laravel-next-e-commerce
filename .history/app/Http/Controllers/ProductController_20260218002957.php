@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Attribute;
-use App\Models\AttributeValue;
 use App\Models\Product;
 use App\Models\ProductGallery;
 use App\Models\ProductVariant;
@@ -32,7 +31,7 @@ class ProductController extends Controller
         // load your categories/brands if you have models
         $categories = \App\Models\Category::orderBy('name')->get();
         $brands = \App\Models\Brand::orderBy('name')->get();
-        $attributes = Attribute::with('values')->get();
+         $attributes = Attribute::with('values')->get();
 
         return view('pages.products.create', compact('categories', 'brands', 'attributes'));
     }
@@ -155,13 +154,13 @@ class ProductController extends Controller
             'description' => ['nullable', 'string'],
             'short_description' => ['nullable', 'string', 'max:1500'],
 
-            // Only for simple/downloadable
             'regular_price' => ['nullable', 'numeric', 'min:0'],
             'sale_price' => ['nullable', 'numeric', 'min:0'],
-            'stock' => ['nullable', 'integer', 'min:0'],
 
             'sku' => ['nullable', 'string', 'max:100', Rule::unique('products', 'sku')->ignore($ignoreId)],
             'barcode' => ['nullable', 'string', 'max:120'],
+
+            'stock' => ['nullable', 'integer', 'min:0'],
             'shipping_price' => ['nullable', 'numeric', 'min:0'],
 
             'category_id' => ['nullable', 'integer'],
@@ -169,14 +168,12 @@ class ProductController extends Controller
 
             'featured_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
             'gallery_images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+
             'download_file' => ['nullable', 'file', 'mimes:pdf,zip', 'max:10240'],
 
-            // ✅ Variable variants (required if product_type=variable)
+            // variants arrays (only used for variable)
             'variants' => ['nullable', 'array'],
-            'variants.*.attributes_json' => [
-                Rule::requiredIf(fn() => $request->input('product_type') === 'variable'),
-                'string'
-            ],
+            'variants.*.attributes_json' => ['nullable', 'string'],
             'variants.*.regular_price' => ['nullable', 'numeric', 'min:0'],
             'variants.*.sale_price' => ['nullable', 'numeric', 'min:0'],
             'variants.*.stock' => ['nullable', 'integer', 'min:0'],
@@ -184,7 +181,6 @@ class ProductController extends Controller
             'variants.*.image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
         ]);
     }
-
 
     private function uniqueSlug(string $base, ?int $ignoreId = null): string
     {
@@ -228,32 +224,5 @@ class ProductController extends Controller
 
             $product->variants()->create($variantData);
         }
-    }
-
-    // AJAX endpoint to get attribute options
-    public function attributeOptions(Request $request)
-    {
-        $attributeId = (int) $request->get('attribute_id');
-
-        $options = AttributeValue::query()
-            ->where('attribute_id', $attributeId)
-            ->orderBy('value')
-            ->get(['id', 'value']);
-
-        return response()->json($options);
-    }
-
-    public function attributeValues(Request $request)
-    {
-        $attributeId = (int) $request->query('attribute_id');
-        if (!$attributeId) return response()->json([]);
-
-        $values = AttributeValue::where('attribute_id', $attributeId)
-            ->orderBy('id')
-            ->get(['id', 'value']); // assuming column is `value`
-
-        return response()->json(
-            $values->map(fn($v) => ['id' => $v->id, 'label' => $v->value])->values()
-        );
     }
 }

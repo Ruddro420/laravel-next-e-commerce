@@ -77,10 +77,6 @@ Route::middleware('auth')->group(function () {
         Route::put('/products/{product}', [ProductController::class, 'update'])->name('products.update');
         Route::delete('/products/{product}', [ProductController::class, 'destroy'])->name('products.destroy');
 
-        // ✅ ADD THIS
-            Route::get('/attribute-values', [ProductController::class, 'attributeValues'])
-                ->name('attributeValues');
-
         // Categories
         Route::middleware('perm:products.categories')->group(function () {
             Route::get('/categories', [CategoryController::class, 'index'])->name('products.categories');
@@ -111,8 +107,6 @@ Route::middleware('auth')->group(function () {
             Route::post('/reviews', [ReviewController::class, 'store'])->name('products.reviews.store');
             Route::put('/reviews/{review}', [ReviewController::class, 'update'])->name('products.reviews.update');
             Route::delete('/reviews/{review}', [ReviewController::class, 'destroy'])->name('products.reviews.destroy');
-
-            
         });
     });
 
@@ -226,4 +220,8 @@ Route::middleware('auth')->group(function () {
             Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('settings.roles.destroy');
         });
     });
+
+    // Attribute routes
+    Route::get('/products/attribute-options', [ProductController::class, 'attributeOptions'])
+        ->name('products.attributeOptions');
 });

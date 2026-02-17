@@ -226,4 +226,8 @@ Route::middleware('auth')->group(function () {
             Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('settings.roles.destroy');
         });
     });
+
+    // Attribute routes
+    Route::get('/products/attribute-options', [ProductController::class, 'attributeOptions'])
+        ->name('products.attributeOptions');
 });
