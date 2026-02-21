@@ -38,7 +38,7 @@ Route::post('checkout', [OrderController::class, 'apiCheckout']);
 // payment
 Route::post('orders/{orderId}/payment', [PaymentController::class, 'apiUpdatePayment']);
 // need data by order id
-Route::get('orders/{id}', [OrderController::class, 'apiGetOrderById']);
+// Route::get('orders/{id}', [OrderController::class, 'apiGetOrderById']);
 // Customer auth routes
 Route::prefix('customer-auth')->group(function () {
     Route::post('/register', [CustomerAuthController::class, 'register']);
@@ -55,7 +55,7 @@ Route::prefix('customer-auth')->group(function () {
     //     Route::get('/customer/orders/{id}', [CustomerOrderController::class, 'show']);
     // });
     Route::middleware('auth:customer')->group(function () {
-        // Route::get('orders/{id}', [OrderController::class, 'apiGetOrderById']);
+        Route::get('orders/{id}', [OrderController::class, 'apiGetOrderById']);
         // Order routes
         Route::get('/customer/orders', [OrderController::class, 'apiCustomerOrders']);
         Route::get('/customer/orders/{id}', [OrderController::class, 'apiGetOrderById']);

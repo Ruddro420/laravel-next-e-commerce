@@ -55,14 +55,7 @@ Route::prefix('customer-auth')->group(function () {
     //     Route::get('/customer/orders/{id}', [CustomerOrderController::class, 'show']);
     // });
     Route::middleware('auth:customer')->group(function () {
-        // Route::get('orders/{id}', [OrderController::class, 'apiGetOrderById']);
-        // Order routes
-        Route::get('/customer/orders', [OrderController::class, 'apiCustomerOrders']);
-        Route::get('/customer/orders/{id}', [OrderController::class, 'apiGetOrderById']);
-        Route::get('/customer/orders/stats', [OrderController::class, 'apiCustomerOrderStats']);
-
-        // Add other customer routes here
-        // Route::get('/customer/profile', [CustomerController::class, 'getProfile']);
-        // Route::put('/customer/profile', [CustomerController::class, 'updateProfile']);
+        Route::get('/customer/orders', [CustomerOrderController::class, 'index']);
+        Route::get('/customer/orders/{id}', [CustomerOrderController::class, 'show']);
     });
 });

@@ -4,7 +4,6 @@ use App\Http\Controllers\Api\CustomerAuthController;
 use App\Http\Controllers\BrandController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CouponController;
-use App\Http\Controllers\CustomerOrderController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProductController;
@@ -47,22 +46,5 @@ Route::prefix('customer-auth')->group(function () {
     Route::middleware('auth:customer')->group(function () {
         Route::get('/me', [CustomerAuthController::class, 'me']);
         Route::post('/logout', [CustomerAuthController::class, 'logout']);
-    });
-
-
-    // Route::middleware('auth:customer')->group(function () {
-    //     Route::get('/customer/orders', [CustomerOrderController::class, 'index']);
-    //     Route::get('/customer/orders/{id}', [CustomerOrderController::class, 'show']);
-    // });
-    Route::middleware('auth:customer')->group(function () {
-        // Route::get('orders/{id}', [OrderController::class, 'apiGetOrderById']);
-        // Order routes
-        Route::get('/customer/orders', [OrderController::class, 'apiCustomerOrders']);
-        Route::get('/customer/orders/{id}', [OrderController::class, 'apiGetOrderById']);
-        Route::get('/customer/orders/stats', [OrderController::class, 'apiCustomerOrderStats']);
-
-        // Add other customer routes here
-        // Route::get('/customer/profile', [CustomerController::class, 'getProfile']);
-        // Route::put('/customer/profile', [CustomerController::class, 'updateProfile']);
     });
 });

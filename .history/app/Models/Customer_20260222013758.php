@@ -27,6 +27,4 @@ class Customer extends Authenticatable
     {
         return $this->hasOne(CustomerAuth::class);
     }
-
-    
 }

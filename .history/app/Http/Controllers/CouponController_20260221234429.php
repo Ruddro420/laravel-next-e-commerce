@@ -5,8 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Coupon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Carbon\Carbon;
-
 
 class CouponController extends Controller
 {
@@ -67,23 +65,14 @@ class CouponController extends Controller
         return back()->with('success', 'Coupon deleted successfully!');
     }
     // get coupon by code for API
-
-    public function applyCoupon(Request $request)
+    public function getCouponByCode(Request $request)
     {
-        $code = strtoupper(trim((string) $request->query('code')));
-        $amount = (float) $request->query('amount', 0);
+        $code = strtoupper(trim($request->query('code')));
 
         if (!$code) {
             return response()->json([
                 'success' => false,
                 'message' => 'Coupon code is required'
-            ], 400);
-        }
-
-        if ($amount <= 0) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Valid amount is required'
             ], 400);
         }
 
@@ -96,8 +85,8 @@ class CouponController extends Controller
             ], 404);
         }
 
-        // If you have is_active column
-        if (isset($coupon->is_active) && !$coupon->is_active) {
+        // Check active
+        if (!$coupon->is_active) {
             return response()->json([
                 'success' => false,
                 'message' => 'Coupon is inactive'
@@ -106,71 +95,25 @@ class CouponController extends Controller
 
         $now = Carbon::now();
 
-        if ($coupon->starts_at && $now->lt(Carbon::parse($coupon->starts_at))) {
+        // Check start date
+        if ($coupon->starts_at && $now->lt($coupon->starts_at)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Coupon not started yet'
             ], 400);
         }
 
-        if ($coupon->expires_at && $now->gt(Carbon::parse($coupon->expires_at))) {
+        // Check expiry
+        if ($coupon->expires_at && $now->gt($coupon->expires_at)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Coupon expired'
             ], 400);
         }
 
-        $minOrder = (float) ($coupon->min_order_amount ?? 0);
-        if ($minOrder > 0 && $amount < $minOrder) {
-            return response()->json([
-                'success' => false,
-                'message' => "Minimum order amount is {$minOrder}"
-            ], 400);
-        }
-
-        // ✅ Usage limit check (only if you have a usage_count column)
-        // If you DO NOT have usage_count, ignore this part or tell me your usage system.
-        if (!is_null($coupon->usage_limit) && isset($coupon->usage_count)) {
-            if ((int) $coupon->usage_count >= (int) $coupon->usage_limit) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Coupon usage limit reached'
-                ], 400);
-            }
-        }
-
-        // ✅ Calculate discount
-        $discount = 0;
-
-        if ($coupon->type === 'percent') {
-            $discount = ($amount * (float) $coupon->value) / 100;
-            // optional: don’t allow discount more than amount
-            $discount = min($discount, $amount);
-        } elseif ($coupon->type === 'fixed') {
-            $discount = min((float) $coupon->value, $amount);
-        } else {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid coupon type'
-            ], 400);
-        }
-
-        $finalPayable = max(0, $amount - $discount);
-
         return response()->json([
             'success' => true,
-            'message' => 'Coupon applied successfully',
-            'data' => [
-                'code' => $coupon->code,
-                'type' => $coupon->type,
-                'value' => (float) $coupon->value,
-                'min_order_amount' => $minOrder,
-                'amount' => $amount,
-                'discount' => round($discount, 2),
-                'final_payable' => round($finalPayable, 2),
-                'starts_at' => $coupon->starts_at,
-                'expires_at' => $coupon->expires_at,
-            ],
+            'coupon' => $coupon
         ]);
     }
 }

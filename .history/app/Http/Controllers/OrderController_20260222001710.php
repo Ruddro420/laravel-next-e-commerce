@@ -9,7 +9,6 @@ use App\Models\TaxRate;
 use App\Models\Product;
 use App\Services\StockService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
@@ -497,28 +496,11 @@ class OrderController extends Controller
     {
         $data = $this->validateOrder($request); // uses your existing validation
 
-        // ✅ Must be logged in customer (auth:customer)
-        $authCustomer = auth('customer')->user();
-        if (!$authCustomer) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Please login to place an order.',
-            ], 401);
-        }
-
-        // ✅ Do NOT trust customer_id from request (override)
-        $data['customer_id'] = $authCustomer->id;
-
         return DB::transaction(function () use ($data) {
 
-            // ✅ Always load customer from token user
-            $customer = Customer::find($data['customer_id']);
-            if (!$customer) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Customer not found.',
-                ], 404);
-            }
+            $customer = !empty($data['customer_id'])
+                ? Customer::find($data['customer_id'])
+                : null;
 
             // Build items
             [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
@@ -535,27 +517,23 @@ class OrderController extends Controller
                 $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0)
             );
 
-            $total = max(
-                0,
-                $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount
-            );
+            $total = max(0, $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount);
 
             // Stock deduct
             $this->deductStockOrFail($itemsPayload);
 
-            // ✅ Order attrs (customer_id always from token)
+            // Order attrs
             $orderAttrs = [
                 'order_number'     => $this->makeOrderNumber(),
-                'customer_id'      => $customer->id,
+                'customer_id'      => $customer?->id,
                 'status'           => $data['status'],
 
                 'subtotal'         => $subtotal,
                 'shipping'         => (float)($data['shipping'] ?? 0),
                 'total'            => $total,
 
-                // ✅ If request doesn't send address, fallback to customer saved addresses
-                'billing_address'  => $data['billing_address'] ?? $customer->billing_address,
-                'shipping_address' => $data['shipping_address'] ?? $customer->shipping_address,
+                'billing_address'  => $data['billing_address'] ?? $customer?->billing_address,
+                'shipping_address' => $data['shipping_address'] ?? $customer?->shipping_address,
                 'note'             => $data['note'] ?? null,
 
                 // coupon/tax fields (your DB has these)
@@ -577,11 +555,7 @@ class OrderController extends Controller
             $amountPaid = (float)($pay['amount_paid'] ?? 0);
             $amountDue  = max(0, $total - $amountPaid);
 
-            $paymentStatus = $this->calcPaymentStatus(
-                $pay['method'],
-                $amountPaid,
-                $amountDue
-            );
+            $paymentStatus = $this->calcPaymentStatus($pay['method'], $amountPaid, $amountDue);
 
             if (method_exists($order, 'payment')) {
                 $order->payment()->create([
@@ -614,187 +588,5 @@ class OrderController extends Controller
                 'order'   => $order,
             ], 201);
         });
-    }
-    // get order by id
-    public function apiGetOrderById($id)
-    {
-        $order = Order::with(['customer', 'items', 'payment', 'taxRate'])->where('id', $id)->first();
-        if (!$order) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Order not found'
-            ], 404);
-        }
-        return response()->json([
-            'success' => true,
-            'order' => $order
-        ]);
-    }
-
-    // api for customer to get their orders
-    public function apiCustomerOrders(Request $request)
-    {
-        try {
-            $customer = Auth::guard('customer')->user();
-
-            if (!$customer) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            $perPage = (int) $request->get('per_page', 10);
-            $perPage = max(1, min(50, $perPage));
-
-            $search = $request->get('q');          // search order_number
-            $status = $request->get('status');      // filter status
-            $fromDate = $request->get('from_date'); // filter from date
-            $toDate = $request->get('to_date');     // filter to date
-
-            $orders = Order::query()
-                ->where('customer_id', $customer->id)
-                ->with(['items', 'payment']) // Eager load relationships
-                ->when($search, function ($query, $search) {
-                    return $query->where('order_number', 'LIKE', "%{$search}%");
-                })
-                ->when($status, function ($query, $status) {
-                    return $query->where('status', $status);
-                })
-                ->when($fromDate, function ($query, $fromDate) {
-                    return $query->whereDate('created_at', '>=', $fromDate);
-                })
-                ->when($toDate, function ($query, $toDate) {
-                    return $query->whereDate('created_at', '<=', $toDate);
-                })
-                ->latest()
-                ->paginate($perPage)
-                ->withQueryString();
-
-            // Transform the data to ensure proper format
-            $orders->getCollection()->transform(function ($order) {
-                return [
-                    'id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'customer_id' => $order->customer_id,
-                    'total' => (float) $order->total,
-                    'subtotal' => (float) $order->subtotal,
-                    'tax' => (float) $order->tax,
-                    'shipping_cost' => (float) $order->shipping_cost,
-                    'discount' => (float) $order->discount,
-                    'status' => $order->status,
-                    'payment_status' => $order->payment_status,
-                    'shipping_address' => $order->shipping_address,
-                    'billing_address' => $order->billing_address,
-                    'notes' => $order->notes,
-                    'created_at' => $order->created_at,
-                    'updated_at' => $order->updated_at,
-                    'items' => $order->items->map(function ($item) {
-                        return [
-                            'id' => $item->id,
-                            'product_id' => $item->product_id,
-                            'product_name' => $item->product_name,
-                            'quantity' => $item->quantity,
-                            'price' => (float) $item->price,
-                            'total' => (float) $item->total,
-                        ];
-                    }),
-                    'payment' => $order->payment ? [
-                        'id' => $order->payment->id,
-                        'method' => $order->payment->method,
-                        'status' => $order->payment->status,
-                        'transaction_id' => $order->payment->transaction_id,
-                    ] : null,
-                ];
-            });
-
-            return response()->json([
-                'success' => true,
-                'orders' => $orders,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch orders',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get single order by ID for authenticated customer
-     */
-    // public function apiGetOrderById($id)
-    // {
-    //     try {
-    //         $customer = Auth::guard('customer')->user();
-
-    //         if (!$customer) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'Unauthenticated'
-    //             ], 401);
-    //         }
-
-    //         $order = Order::where('customer_id', $customer->id)
-    //             ->with(['items', 'payment'])
-    //             ->find($id);
-
-    //         if (!$order) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'Order not found'
-    //             ], 404);
-    //         }
-
-    //         return response()->json([
-    //             'success' => true,
-    //             'order' => $order
-    //         ]);
-    //     } catch (\Exception $e) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to fetch order',
-    //             'error' => $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
-
-    /**
-     * Get order statistics for the customer
-     */
-    public function apiCustomerOrderStats(Request $request)
-    {
-        try {
-            $customer = Auth::guard('customer')->user();
-
-            if (!$customer) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            $stats = [
-                'total_orders' => Order::where('customer_id', $customer->id)->count(),
-                'total_spent' => (float) Order::where('customer_id', $customer->id)->sum('total'),
-                'pending_orders' => Order::where('customer_id', $customer->id)->where('status', 'pending')->count(),
-                'processing_orders' => Order::where('customer_id', $customer->id)->where('status', 'processing')->count(),
-                'completed_orders' => Order::where('customer_id', $customer->id)->where('status', 'delivered')->count(),
-                'cancelled_orders' => Order::where('customer_id', $customer->id)->where('status', 'cancelled')->count(),
-                'last_order' => Order::where('customer_id', $customer->id)->latest()->first(),
-            ];
-
-            return response()->json([
-                'success' => true,
-                'stats' => $stats
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch order statistics',
-                'error' => $e->getMessage()
-            ], 500);
-        }
     }
 }

@@ -724,41 +724,41 @@ class OrderController extends Controller
     /**
      * Get single order by ID for authenticated customer
      */
-    // public function apiGetOrderById($id)
-    // {
-    //     try {
-    //         $customer = Auth::guard('customer')->user();
+    public function apiGetOrderById($id)
+    {
+        try {
+            $customer = Auth::guard('customer')->user();
 
-    //         if (!$customer) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'Unauthenticated'
-    //             ], 401);
-    //         }
+            if (!$customer) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
 
-    //         $order = Order::where('customer_id', $customer->id)
-    //             ->with(['items', 'payment'])
-    //             ->find($id);
+            $order = Order::where('customer_id', $customer->id)
+                ->with(['items', 'payment'])
+                ->find($id);
 
-    //         if (!$order) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'Order not found'
-    //             ], 404);
-    //         }
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order not found'
+                ], 404);
+            }
 
-    //         return response()->json([
-    //             'success' => true,
-    //             'order' => $order
-    //         ]);
-    //     } catch (\Exception $e) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to fetch order',
-    //             'error' => $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
+            return response()->json([
+                'success' => true,
+                'order' => $order
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch order',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
     /**
      * Get order statistics for the customer
