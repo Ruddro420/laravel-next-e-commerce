@@ -456,99 +456,99 @@ class ProductController extends Controller
     }
     // Product data by brand slug
     public function apiProductsByBrandSlug($slug)
-    {
-        $brand = \App\Models\Brand::where('slug', $slug)->first();
+{
+    $brand = \App\Models\Brand::where('slug', $slug)->first();
 
-        if (!$brand) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Brand not found'
-            ], 404);
+    if (!$brand) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Brand not found'
+        ], 404);
+    }
+
+    $products = \App\Models\Product::where('brand_id', $brand->id)
+        ->where('is_active', 1)
+        ->with([
+            'category:id,name,slug',
+            'brand:id,name,slug',
+            // ✅ include variants for variable product cards
+            'variants' => function ($q) {
+                $q->select([
+                    'id',
+                    'product_id',
+                    'regular_price',
+                    'sale_price',
+                    'stock',
+                    'image_path',
+                    'attributes', // if this is a json column in variants table
+                ]);
+            }
+        ])
+        ->select([
+            'id',
+            'brand_id',
+            'category_id',
+            'name',
+            'slug',
+            'sku',
+            'product_type',
+            'regular_price',
+            'sale_price',
+            'stock',
+            'featured_image',
+            'short_description',
+            'description',
+            'is_active',
+            'created_at',
+        ])
+        ->latest()
+        ->get();
+
+    $products->transform(function ($product) {
+        // product image url
+        $product->featured_image_url = $product->featured_image
+            ? \Storage::disk('public')->url($product->featured_image)
+            : null;
+
+        // ✅ variant image url
+        if ($product->relationLoaded('variants') && $product->variants) {
+            $product->variants->transform(function ($v) {
+                $v->image_url = $v->image_path
+                    ? \Storage::disk('public')->url($v->image_path)
+                    : null;
+                return $v;
+            });
         }
 
-        $products = \App\Models\Product::where('brand_id', $brand->id)
-            ->where('is_active', 1)
-            ->with([
-                'category:id,name,slug',
-                'brand:id,name,slug',
-                // ✅ include variants for variable product cards
-                'variants' => function ($q) {
-                    $q->select([
-                        'id',
-                        'product_id',
-                        'regular_price',
-                        'sale_price',
-                        'stock',
-                        'image_path',
-                        'attributes', // if this is a json column in variants table
-                    ]);
-                }
-            ])
-            ->select([
-                'id',
-                'brand_id',
-                'category_id',
-                'name',
-                'slug',
-                'sku',
-                'product_type',
-                'regular_price',
-                'sale_price',
-                'stock',
-                'featured_image',
-                'short_description',
-                'description',
-                'is_active',
-                'created_at',
-            ])
-            ->latest()
-            ->get();
+        // ✅ optional: compute range for variable products (useful for listing cards)
+        if ($product->product_type === 'variable' && $product->variants && $product->variants->count()) {
+            $prices = $product->variants->map(function ($v) {
+                return $v->sale_price ?? $v->regular_price;
+            })->filter(function ($p) {
+                return $p !== null;
+            })->map(function ($p) {
+                return (float) $p;
+            });
 
-        $products->transform(function ($product) {
-            // product image url
-            $product->featured_image_url = $product->featured_image
-                ? \Storage::disk('public')->url($product->featured_image)
-                : null;
+            $product->min_price = $prices->count() ? $prices->min() : null;
+            $product->max_price = $prices->count() ? $prices->max() : null;
+        } else {
+            $product->min_price = null;
+            $product->max_price = null;
+        }
 
-            // ✅ variant image url
-            if ($product->relationLoaded('variants') && $product->variants) {
-                $product->variants->transform(function ($v) {
-                    $v->image_url = $v->image_path
-                        ? \Storage::disk('public')->url($v->image_path)
-                        : null;
-                    return $v;
-                });
-            }
+        return $product;
+    });
 
-            // ✅ optional: compute range for variable products (useful for listing cards)
-            if ($product->product_type === 'variable' && $product->variants && $product->variants->count()) {
-                $prices = $product->variants->map(function ($v) {
-                    return $v->sale_price ?? $v->regular_price;
-                })->filter(function ($p) {
-                    return $p !== null;
-                })->map(function ($p) {
-                    return (float) $p;
-                });
-
-                $product->min_price = $prices->count() ? $prices->min() : null;
-                $product->max_price = $prices->count() ? $prices->max() : null;
-            } else {
-                $product->min_price = null;
-                $product->max_price = null;
-            }
-
-            return $product;
-        });
-
-        return response()->json([
-            'success' => true,
-            'brand' => [
-                'id' => $brand->id,
-                'name' => $brand->name,
-                'slug' => $brand->slug,
-            ],
-            'count' => $products->count(),
-            'products' => $products
-        ]);
-    }
+    return response()->json([
+        'success' => true,
+        'brand' => [
+            'id' => $brand->id,
+            'name' => $brand->name,
+            'slug' => $brand->slug,
+        ],
+        'count' => $products->count(),
+        'products' => $products
+    ]);
+}
 }
