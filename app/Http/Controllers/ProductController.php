@@ -344,114 +344,151 @@ class ProductController extends Controller
     }
 
     // ✅ GET: /api/products
-public function apiProducts(Request $request)
-{
-    $q = $request->query('q');
+    public function apiProducts(Request $request)
+    {
+        $q = $request->query('q');
 
-    $products = Product::query()
-        ->when($q, fn($qr) => $qr->where('name', 'like', "%$q%")->orWhere('sku', 'like', "%$q%"))
-        ->with(['category', 'brand'])
-        ->latest()
-        ->get();
+        $products = Product::query()
+            ->when($q, fn($qr) => $qr->where('name', 'like', "%$q%")->orWhere('sku', 'like', "%$q%"))
+            ->with(['category', 'brand'])
+            ->latest()
+            ->get();
 
-    $products->transform(function ($p) {
-        $p->featured_image_url = $p->featured_image ? Storage::disk('public')->url($p->featured_image) : null;
-        return $p;
-    });
+        $products->transform(function ($p) {
+            $p->featured_image_url = $p->featured_image ? Storage::disk('public')->url($p->featured_image) : null;
+            return $p;
+        });
 
-    return response()->json([
-        'success' => true,
-        'products' => $products,
-    ]);
-}
-
-
-// ✅ GET: /api/products/{id}
-public function apiProductShow($id)
-{
-    $product = Product::with([
-        'gallery',
-        'variants',
-        'attributeValues.attribute',
-        'category',
-        'brand',
-    ])->find($id);
-
-    if (!$product) {
-        return response()->json(['message' => 'Product not found'], 404);
+        return response()->json([
+            'success' => true,
+            'products' => $products,
+        ]);
     }
 
-    $product->featured_image_url = $product->featured_image ? Storage::disk('public')->url($product->featured_image) : null;
-    $product->download_file_url  = $product->download_file ? Storage::disk('public')->url($product->download_file) : null;
 
-    // gallery urls
-    $product->gallery->transform(function ($g) {
-        $g->image_url = $g->image_path ? Storage::disk('public')->url($g->image_path) : null;
-        return $g;
-    });
+    // ✅ GET: /api/products/{id}
+    public function apiProductShow($id)
+    {
+        $product = Product::with([
+            'gallery',
+            'variants',
+            'attributeValues.attribute',
+            'category',
+            'brand',
+        ])->find($id);
 
-    // variant image urls
-    $product->variants->transform(function ($v) {
-        $v->image_url = $v->image_path ? Storage::disk('public')->url($v->image_path) : null;
-        return $v;
-    });
+        if (!$product) {
+            return response()->json(['message' => 'Product not found'], 404);
+        }
 
-    // ✅ if variable product: group attributes nicely (Attribute -> Values)
-    if ($product->product_type === 'variable') {
-        $product->attributes = $product->attributeValues
-            ->groupBy(fn($val) => $val->pivot->attribute_id)
-            ->map(function ($values) {
-                $first = $values->first();
-                return [
-                    'attribute_id' => $first->pivot->attribute_id,
-                    'attribute_name' => optional($first->attribute)->name,
-                    'attribute_slug' => optional($first->attribute)->slug,
-                    'values' => $values->map(fn($v) => [
-                        'id' => $v->id,
-                        'value' => $v->value,
-                    ])->values(),
-                ];
-            })
-            ->values();
-    } else {
-        $product->attributes = [];
+        $product->featured_image_url = $product->featured_image ? Storage::disk('public')->url($product->featured_image) : null;
+        $product->download_file_url  = $product->download_file ? Storage::disk('public')->url($product->download_file) : null;
+
+        // gallery urls
+        $product->gallery->transform(function ($g) {
+            $g->image_url = $g->image_path ? Storage::disk('public')->url($g->image_path) : null;
+            return $g;
+        });
+
+        // variant image urls
+        $product->variants->transform(function ($v) {
+            $v->image_url = $v->image_path ? Storage::disk('public')->url($v->image_path) : null;
+            return $v;
+        });
+
+        // ✅ if variable product: group attributes nicely (Attribute -> Values)
+        if ($product->product_type === 'variable') {
+            $product->attributes = $product->attributeValues
+                ->groupBy(fn($val) => $val->pivot->attribute_id)
+                ->map(function ($values) {
+                    $first = $values->first();
+                    return [
+                        'attribute_id' => $first->pivot->attribute_id,
+                        'attribute_name' => optional($first->attribute)->name,
+                        'attribute_slug' => optional($first->attribute)->slug,
+                        'values' => $values->map(fn($v) => [
+                            'id' => $v->id,
+                            'value' => $v->value,
+                        ])->values(),
+                    ];
+                })
+                ->values();
+        } else {
+            $product->attributes = [];
+        }
+
+        // remove raw pivot list if you want cleaner response
+        unset($product->attributeValues);
+
+        return response()->json([
+            'success' => true,
+            'product' => $product,
+        ]);
     }
 
-    // remove raw pivot list if you want cleaner response
-    unset($product->attributeValues);
 
-    return response()->json([
-        'success' => true,
-        'product' => $product,
-    ]);
-}
+    // ✅ GET: /api/products/{id}/related
+    public function apiRelatedProducts($id)
+    {
+        $product = Product::find($id);
 
+        if (!$product) {
+            return response()->json(['message' => 'Product not found'], 404);
+        }
 
-// ✅ GET: /api/products/{id}/related
-public function apiRelatedProducts($id)
-{
-    $product = Product::find($id);
+        $related = Product::where('category_id', $product->category_id)
+            ->where('id', '!=', $product->id)
+            ->with(['category', 'brand'])
+            ->latest()
+            ->take(12)
+            ->get();
 
-    if (!$product) {
-        return response()->json(['message' => 'Product not found'], 404);
+        $related->transform(function ($p) {
+            $p->featured_image_url = $p->featured_image ? Storage::disk('public')->url($p->featured_image) : null;
+            return $p;
+        });
+
+        return response()->json([
+            'success' => true,
+            'product_id' => $product->id,
+            'related' => $related,
+        ]);
     }
+    // Product data by brand slug
+    public function apiProductsByBrandSlug($slug)
+    {
+        $brand = \App\Models\Brand::where('slug', $slug)->first();
 
-    $related = Product::where('category_id', $product->category_id)
-        ->where('id', '!=', $product->id)
-        ->with(['category', 'brand'])
-        ->latest()
-        ->take(12)
-        ->get();
+        if (!$brand) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Brand not found'
+            ], 404);
+        }
 
-    $related->transform(function ($p) {
-        $p->featured_image_url = $p->featured_image ? Storage::disk('public')->url($p->featured_image) : null;
-        return $p;
-    });
+        $products = \App\Models\Product::where('brand_id', $brand->id)
+            ->where('is_active', 1)
+            ->with(['category:id,name', 'brand:id,name,slug'])
+            ->latest()
+            ->get();
 
-    return response()->json([
-        'success' => true,
-        'product_id' => $product->id,
-        'related' => $related,
-    ]);
-}
+        $products->transform(function ($product) {
+            $product->featured_image_url = $product->featured_image
+                ? \Storage::disk('public')->url($product->featured_image)
+                : null;
+
+            return $product;
+        });
+
+        return response()->json([
+            'success' => true,
+            'brand' => [
+                'id' => $brand->id,
+                'name' => $brand->name,
+                'slug' => $brand->slug,
+            ],
+            'count' => $products->count(),
+            'products' => $products
+        ]);
+    }
 }

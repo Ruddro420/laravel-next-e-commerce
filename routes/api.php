@@ -65,4 +65,10 @@ Route::prefix('customer-auth')->group(function () {
         // Route::get('/customer/profile', [CustomerController::class, 'getProfile']);
         // Route::put('/customer/profile', [CustomerController::class, 'updateProfile']);
     });
+
+
+    // Route::get('products', [ProductController::class, 'apiProducts']);
 });
+
+// Product by brand slug
+Route::get('products/brand/{slug}', [ProductController::class, 'apiProductsByBrandSlug']);
