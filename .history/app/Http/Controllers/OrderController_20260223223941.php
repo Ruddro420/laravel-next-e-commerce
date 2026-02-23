@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\Customer;
 use App\Models\Coupon;
-use App\Models\ProductVariant;
 use App\Models\TaxRate;
 use App\Models\Product;
 use App\Services\StockService;
@@ -18,8 +17,6 @@ use Illuminate\Support\Facades\Schema;
 
 class OrderController extends Controller
 {
-    // ---------------- CRM ----------------
-
     public function index(Request $request)
     {
         $q = $request->get('q');
@@ -44,8 +41,6 @@ class OrderController extends Controller
     {
         $customers = Customer::orderBy('name')->get();
         $taxRates  = TaxRate::where('is_active', true)->orderBy('name')->get();
-
-        // ✅ Load products
         $products  = Product::where('is_active', 1)->orderBy('name')->get();
 
         return view('pages.crm.orders.create', compact('customers', 'taxRates', 'products'));
@@ -61,14 +56,16 @@ class OrderController extends Controller
                 ? Customer::find($data['customer_id'])
                 : null;
 
-            // ✅ Build items (maps product_id / id safely)
+            // ✅ Build items safely (product_id optional)
             [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
 
+            // Coupon
             [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
                 $data['coupon_code'] ?? null,
                 $subtotal
             );
 
+            // Tax
             [$taxRateId, $taxAmount] = $this->applyTax(
                 $data['tax_rate_id'] ?? null,
                 $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0)
@@ -76,34 +73,39 @@ class OrderController extends Controller
 
             $total = max(0, $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount);
 
-            // stock
+            // ✅ Stock deduct only for rows with product_id
             $this->deductStockOrFail($itemsPayload);
 
+            // Build order attrs
             $orderAttrs = [
                 'order_number'     => $this->makeOrderNumber(),
                 'customer_id'      => $customer?->id,
                 'status'           => $data['status'],
+
                 'subtotal'         => $subtotal,
                 'shipping'         => (float)($data['shipping'] ?? 0),
                 'total'            => $total,
+
                 'billing_address'  => $data['billing_address'] ?? $customer?->billing_address,
                 'shipping_address' => $data['shipping_address'] ?? $customer?->shipping_address,
                 'note'             => $data['note'] ?? null,
             ];
 
-            // discount/coupon fields (safe)
-            if (Schema::hasColumn('orders', 'discount')) $orderAttrs['discount'] = $couponDiscount;
+            // discount fields
+            if (Schema::hasColumn('orders', 'discount')) {
+                $orderAttrs['discount'] = $couponDiscount;
+            }
             if (Schema::hasColumn('orders', 'coupon_id')) $orderAttrs['coupon_id'] = $couponId;
             if (Schema::hasColumn('orders', 'coupon_code')) $orderAttrs['coupon_code'] = $couponCode;
             if (Schema::hasColumn('orders', 'coupon_discount')) $orderAttrs['coupon_discount'] = $couponDiscount;
 
-            // tax fields (safe)
+            // tax fields
             if (Schema::hasColumn('orders', 'tax_rate_id')) $orderAttrs['tax_rate_id'] = $taxRateId;
             if (Schema::hasColumn('orders', 'tax_amount')) $orderAttrs['tax_amount'] = $taxAmount;
 
             $order = Order::create($orderAttrs);
 
-            // ✅ items
+            // items
             $order->items()->createMany($itemsPayload);
 
             // payment
@@ -113,6 +115,7 @@ class OrderController extends Controller
 
             $paymentStatus = $this->calcPaymentStatus($pay['method'], $amountPaid, $amountDue);
 
+            // Save to order_payments relation (if exists)
             if (method_exists($order, 'payment')) {
                 $order->payment()->create([
                     'method'         => $pay['method'],
@@ -124,13 +127,23 @@ class OrderController extends Controller
                 ]);
             }
 
-            // sync orders payment columns if exist
+            // Also sync orders.payment_method/payment_status columns (your migration has these)
             $updates = [];
-            if (Schema::hasColumn('orders', 'payment_method')) $updates['payment_method'] = $pay['method'];
-            if (Schema::hasColumn('orders', 'payment_status')) $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
-            if (!empty($updates)) $order->update($updates);
+            if (Schema::hasColumn('orders', 'payment_method')) {
+                $updates['payment_method'] = $pay['method'];
+            }
+            if (Schema::hasColumn('orders', 'payment_status')) {
+                // map to your orders table values
+                $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
+            }
+            if (!empty($updates)) {
+                $order->update($updates);
+            }
 
-            if ($couponId) Coupon::where('id', $couponId)->increment('used_count');
+            // coupon usage
+            if ($couponId) {
+                Coupon::where('id', $couponId)->increment('used_count');
+            }
 
             return redirect()->route('crm.orders')->with('success', 'Order created successfully!');
         });
@@ -138,14 +151,13 @@ class OrderController extends Controller
 
     public function show(Order $order)
     {
-        $order->load(['customer', 'items.product', 'payment', 'items.variant']);
-        // dd($order->items->map(fn($item) => $item->variant));
+        $order->load(['customer', 'items', 'payment', 'taxRate',  'items.variant', 'items.product']);
         return view('pages.crm.orders.show', compact('order'));
     }
 
     public function edit(Order $order)
     {
-        $order->load(['customer', 'items.product', 'payment']);
+        $order->load(['customer', 'items', 'payment']);
         $customers = Customer::orderBy('name')->get();
         $taxRates  = TaxRate::where('is_active', true)->orderBy('name')->get();
         $products  = Product::where('is_active', 1)->orderBy('name')->get();
@@ -163,7 +175,7 @@ class OrderController extends Controller
                 ? Customer::find($data['customer_id'])
                 : null;
 
-            // restore old stock
+            // ✅ Restore old stock first
             $oldItems = $order->items()->get()->map(fn($i) => [
                 'product_id' => $i->product_id,
                 'qty'        => (int)$i->qty,
@@ -171,14 +183,16 @@ class OrderController extends Controller
 
             $this->restoreStock($order, $oldItems);
 
-            // new items
+            // ✅ Build new items safely
             [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
 
+            // Coupon
             [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
                 $data['coupon_code'] ?? null,
                 $subtotal
             );
 
+            // Tax
             [$taxRateId, $taxAmount] = $this->applyTax(
                 $data['tax_rate_id'] ?? null,
                 $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0)
@@ -186,14 +200,18 @@ class OrderController extends Controller
 
             $total = max(0, $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount);
 
+            // ✅ Deduct stock for new items
             $this->deductStockOrFail($itemsPayload);
 
+            // Update order
             $orderAttrs = [
                 'customer_id'      => $customer?->id,
                 'status'           => $data['status'],
+
                 'subtotal'         => $subtotal,
                 'shipping'         => (float)($data['shipping'] ?? 0),
                 'total'            => $total,
+
                 'billing_address'  => $data['billing_address'] ?? $customer?->billing_address,
                 'shipping_address' => $data['shipping_address'] ?? $customer?->shipping_address,
                 'note'             => $data['note'] ?? null,
@@ -209,11 +227,11 @@ class OrderController extends Controller
 
             $order->update($orderAttrs);
 
-            // replace items
+            // Replace items
             $order->items()->delete();
             $order->items()->createMany($itemsPayload);
 
-            // payment update
+            // Payment update
             $pay = $data['payment'];
             $amountPaid = (float)($pay['amount_paid'] ?? 0);
             $amountDue  = max(0, $total - $amountPaid);
@@ -233,6 +251,7 @@ class OrderController extends Controller
                 );
             }
 
+            // sync orders.payment fields
             $updates = [];
             if (Schema::hasColumn('orders', 'payment_method')) $updates['payment_method'] = $pay['method'];
             if (Schema::hasColumn('orders', 'payment_status')) $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
@@ -246,6 +265,7 @@ class OrderController extends Controller
     {
         return DB::transaction(function () use ($order) {
 
+            // Restore stock
             $oldItems = $order->items()->get()->map(fn($i) => [
                 'product_id' => $i->product_id,
                 'qty'        => (int)$i->qty,
@@ -266,30 +286,24 @@ class OrderController extends Controller
         return $request->validate([
             'customer_id'      => ['nullable', 'integer', 'exists:customers,id'],
             'status'           => ['required', Rule::in(['processing', 'complete', 'hold'])],
+
             'coupon_code'      => ['nullable', 'string', 'max:50'],
             'tax_rate_id'      => ['nullable', 'integer', 'exists:tax_rates,id'],
             'shipping'         => ['nullable', 'numeric', 'min:0'],
+
             'billing_address'  => ['nullable', 'string', 'max:4000'],
             'shipping_address' => ['nullable', 'string', 'max:4000'],
             'note'             => ['nullable', 'string', 'max:4000'],
 
             'items'                 => ['required', 'array', 'min:1'],
-
-            // ✅ allow both keys for API: product_id OR id
             'items.*.product_id'    => ['nullable', 'integer', 'exists:products,id'],
-            'items.*.id'            => ['nullable', 'integer', 'exists:products,id'],
-
             'items.*.product_name'  => ['required', 'string', 'max:200'],
             'items.*.sku'           => ['nullable', 'string', 'max:120'],
             'items.*.qty'           => ['required', 'integer', 'min:1'],
             'items.*.price'         => ['required', 'numeric', 'min:0'],
 
-            'items.*.variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-            // OPTIONAL: if sometimes camelCase comes from frontend
-            'items.*.variantId'  => ['nullable', 'integer', 'exists:product_variants,id'],
-
             'payment'                       => ['required', 'array'],
-            'payment.method' => ['required', Rule::in(['cod', 'cash_received', 'bkash', 'nagad', 'rocket'])],
+            'payment.method'                => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
             'payment.amount_paid'           => ['nullable', 'numeric', 'min:0'],
             'payment.transaction_id'        => [
                 'nullable',
@@ -297,81 +311,53 @@ class OrderController extends Controller
                 'max:120',
                 Rule::requiredIf(fn() => in_array($request->input('payment.method'), ['bkash', 'nagad', 'rocket'])),
             ],
+        ], [
+            'items.required'                  => 'At least one item is required.',
+            'items.*.product_name.required'   => 'Product name is required for each item.',
+            'payment.transaction_id.required' => 'Transaction ID is required for bKash/Nagad/Rocket.',
         ]);
     }
 
-    // ---------------- ITEMS ----------------
+    // ---------------- ITEMS (SAFE) ----------------
 
+    /**
+     * ✅ SAFE builder:
+     * - If product_id exists and product exists: fill name/sku from DB
+     * - If product_id missing or product deleted: keep manual name/sku
+     * - NEVER abort(422) for missing product
+     */
     private function buildItemsSafe(array $items): array
     {
         $payload = [];
         $subtotal = 0.0;
 
-        // Handle both id and product_id
-        $items = array_map(function ($it) {
-            if (empty($it['product_id']) && !empty($it['id'])) {
-                $it['product_id'] = $it['id'];
-            }
+        $productIds = collect($items)
+            ->pluck('product_id')
+            ->filter()
+            ->unique()
+            ->values();
 
-            // ✅ normalize variantId (camelCase) -> variant_id (snake_case)
-            if (!isset($it['variant_id']) && isset($it['variantId'])) {
-                $it['variant_id'] = $it['variantId'];
-            }
-
-            return $it;
-        }, $items);
-
-        $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
-        $products   = Product::whereIn('id', $productIds)->get()->keyBy('id');
-
-        // Get variant IDs from items
-        $variantIds = collect($items)->pluck('variant_id')->filter()->unique()->values();
-        $variants   = ProductVariant::whereIn('id', $variantIds)->get()->keyBy('id');
+        $products = Product::whereIn('id', $productIds)->get()->keyBy('id');
 
         foreach ($items as $it) {
             $pid = !empty($it['product_id']) ? (int)$it['product_id'] : null;
-
-            // IMPORTANT: Get variant_id directly from the item
-            $vid = isset($it['variant_id']) && $it['variant_id'] !== null
-                ? (int)$it['variant_id']
-                : null;
-
             $p = $pid ? $products->get($pid) : null;
 
-            // If product missing, set pid to null
+            // If product not found, treat as manual item
             if ($pid && !$p) {
                 $pid = null;
-            }
-
-            // Check if variant exists and belongs to product
-            $v = $vid ? $variants->get($vid) : null;
-            if ($vid && (!$v || ($pid && (int)$v->product_id !== (int)$pid))) {
-                // Variant invalid - set to null
-                $vid = null;
-                $v = null;
             }
 
             $qty   = max(1, (int)($it['qty'] ?? 1));
             $price = (float)($it['price'] ?? 0);
 
-            // Get name and sku
             $name = $p?->name ?? ($it['product_name'] ?? '');
-            $sku  = $it['sku'] ?? ($p?->sku ?? null);
-
-            if ($v) {
-                if (!empty($v->sku)) $sku = $v->sku;
-                if (!empty($v->name)) {
-                    $name = $name . ' - ' . $v->name;
-                } elseif (!empty($v->value)) {
-                    $name = $name . ' - ' . $v->value;
-                }
-            }
+            $sku  = $p?->sku  ?? ($it['sku'] ?? null);
 
             $line = $qty * $price;
             $subtotal += $line;
 
-            // Build the row
-            $row = [
+            $payload[] = [
                 'product_id'   => $pid,
                 'product_name' => $name,
                 'sku'          => $sku,
@@ -379,19 +365,12 @@ class OrderController extends Controller
                 'price'        => $price,
                 'line_total'   => $line,
             ];
-
-            // ✅ ALWAYS add variant_id if it exists in the order_items table
-            if (Schema::hasColumn('order_items', 'variant_id')) {
-                $row['variant_id'] = $vid;  // This will be null if no variant
-            }
-
-            $payload[] = $row;
         }
 
         return [round($subtotal, 2), $payload];
     }
 
-    // ---------------- STOCK ----------------
+    // ---------------- STOCK (NO DOUBLE DEDUCT) ----------------
 
     private function deductStockOrFail(array $itemsPayload): void
     {
@@ -405,13 +384,17 @@ class OrderController extends Controller
             $need = (int)($row['qty'] ?? 0);
             if ($need <= 0) continue;
 
+            // check stock only if finite
             if ($p->stock !== null && $need > (int)$p->stock) {
                 abort(422, "Not enough stock for {$p->name}. Available: {$p->stock}");
             }
 
+            // ✅ Choose ONE method to change stock:
+            // If you use StockService ledger, let it control stock.
             if (class_exists(StockService::class) && method_exists(StockService::class, 'move')) {
                 StockService::move($p, 'out', $need, null, 'Order stock deducted', null);
             } else {
+                // direct subtraction
                 if ($p->stock !== null) {
                     $p->stock = (int)$p->stock - $need;
                     $p->save();
@@ -492,9 +475,13 @@ class OrderController extends Controller
         return [$tax->id, round($taxPart, 2)];
     }
 
+    /**
+     * ✅ Better payment status:
+     * - cod => pending
+     * - digital => paid/partial/unpaid based on due/paid
+     */
     private function calcPaymentStatus(string $method, float $paid, float $due): string
     {
-        if ($method === 'cash_received') return 'paid';
         if ($method === 'cod') return 'pending';
         if ($paid <= 0 && $due > 0) return 'unpaid';
         if ($due <= 0.00001 && $paid > 0) return 'paid';
@@ -505,13 +492,12 @@ class OrderController extends Controller
     {
         return 'ORD-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4));
     }
-
-    // ---------------- API ----------------
-
+    // Order api
     public function apiCheckout(Request $request)
     {
-        $data = $this->validateOrder($request);
+        $data = $this->validateOrder($request); // uses your existing validation
 
+        // ✅ Must be logged in customer (auth:customer)
         $authCustomer = auth('customer')->user();
         if (!$authCustomer) {
             return response()->json([
@@ -520,11 +506,12 @@ class OrderController extends Controller
             ], 401);
         }
 
-        // override customer id
+        // ✅ Do NOT trust customer_id from request (override)
         $data['customer_id'] = $authCustomer->id;
 
         return DB::transaction(function () use ($data) {
 
+            // ✅ Always load customer from token user
             $customer = Customer::find($data['customer_id']);
             if (!$customer) {
                 return response()->json([
@@ -533,49 +520,68 @@ class OrderController extends Controller
                 ], 404);
             }
 
+            // Build items
             [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
 
+            // Coupon
             [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
                 $data['coupon_code'] ?? null,
                 $subtotal
             );
 
+            // Tax
             [$taxRateId, $taxAmount] = $this->applyTax(
                 $data['tax_rate_id'] ?? null,
                 $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0)
             );
 
-            $total = max(0, $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount);
+            $total = max(
+                0,
+                $subtotal - $couponDiscount + (float)($data['shipping'] ?? 0) + $taxAmount
+            );
 
+            // Stock deduct
             $this->deductStockOrFail($itemsPayload);
 
+            // ✅ Order attrs (customer_id always from token)
             $orderAttrs = [
                 'order_number'     => $this->makeOrderNumber(),
                 'customer_id'      => $customer->id,
                 'status'           => $data['status'],
+
                 'subtotal'         => $subtotal,
                 'shipping'         => (float)($data['shipping'] ?? 0),
                 'total'            => $total,
+
+                // ✅ If request doesn't send address, fallback to customer saved addresses
                 'billing_address'  => $data['billing_address'] ?? $customer->billing_address,
                 'shipping_address' => $data['shipping_address'] ?? $customer->shipping_address,
                 'note'             => $data['note'] ?? null,
+
+                // coupon/tax fields (your DB has these)
+                'coupon_id'        => $couponId,
+                'coupon_code'      => $couponCode,
+                'coupon_discount'  => $couponDiscount,
+                'tax_rate_id'      => $taxRateId,
+                'tax_amount'       => $taxAmount,
+                'discount'         => $couponDiscount,
             ];
 
-            if (Schema::hasColumn('orders', 'coupon_id')) $orderAttrs['coupon_id'] = $couponId;
-            if (Schema::hasColumn('orders', 'coupon_code')) $orderAttrs['coupon_code'] = $couponCode;
-            if (Schema::hasColumn('orders', 'coupon_discount')) $orderAttrs['coupon_discount'] = $couponDiscount;
-            if (Schema::hasColumn('orders', 'discount')) $orderAttrs['discount'] = $couponDiscount;
-
-            if (Schema::hasColumn('orders', 'tax_rate_id')) $orderAttrs['tax_rate_id'] = $taxRateId;
-            if (Schema::hasColumn('orders', 'tax_amount')) $orderAttrs['tax_amount'] = $taxAmount;
-
             $order = Order::create($orderAttrs);
+
+            // items
             $order->items()->createMany($itemsPayload);
 
+            // payment
             $pay = $data['payment'];
             $amountPaid = (float)($pay['amount_paid'] ?? 0);
             $amountDue  = max(0, $total - $amountPaid);
-            $paymentStatus = $this->calcPaymentStatus($pay['method'], $amountPaid, $amountDue);
+
+            $paymentStatus = $this->calcPaymentStatus(
+                $pay['method'],
+                $amountPaid,
+                $amountDue
+            );
 
             if (method_exists($order, 'payment')) {
                 $order->payment()->create([
@@ -588,114 +594,49 @@ class OrderController extends Controller
                 ]);
             }
 
-            $updates = [];
-            if (Schema::hasColumn('orders', 'payment_method')) $updates['payment_method'] = $pay['method'];
-            if (Schema::hasColumn('orders', 'payment_status')) $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
-            if (!empty($updates)) $order->update($updates);
-
-            if ($couponId) Coupon::where('id', $couponId)->increment('used_count');
-
-            $order->load([
-                'customer',
-                'payment',
-                'items.product',
-                'items.variant',
+            // also set orders payment fields if exist
+            $order->update([
+                'payment_method' => $pay['method'],
+                'payment_status' => ($paymentStatus === 'paid') ? 'paid' : 'unpaid',
             ]);
+
+            // coupon used count
+            if ($couponId) {
+                Coupon::where('id', $couponId)->increment('used_count');
+            }
+
+            // return json
+            $order->load(['customer', 'items', 'payment', 'taxRate']);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Order placed successfully',
-                'order'   => $this->transformOrderForApi($order),
+                'order'   => $order,
             ], 201);
         });
     }
-
+    // get order by id
     public function apiGetOrderById($id)
     {
-        $order = Order::with([
-            'customer',
-            'payment',
-            'items.product',
-            'items.variant',
-        ])->find($id);
-
+        $order = Order::with(['customer', 'items', 'payment', 'taxRate'])->where('id', $id)->first();
         if (!$order) {
             return response()->json([
                 'success' => false,
                 'message' => 'Order not found'
             ], 404);
         }
-
         return response()->json([
             'success' => true,
-            'order' => [
-                'id' => $order->id,
-                'order_number' => $order->order_number,
-                'customer_id' => $order->customer_id,
-                'status' => $order->status,
-                'subtotal' => (float)$order->subtotal,
-                'shipping' => (float)($order->shipping ?? 0),
-                'tax_amount' => (float)($order->tax_amount ?? 0),
-                'discount' => (float)($order->discount ?? 0),
-                'total' => (float)$order->total,
-                'billing_address' => $order->billing_address,
-                'shipping_address' => $order->shipping_address,
-                'note' => $order->note ?? null,
-                'created_at' => $order->created_at,
-                'updated_at' => $order->updated_at,
-
-                'items' => $order->items->map(function ($it) {
-                    return [
-                        'id' => $it->id,
-                        'product_id' => $it->product_id,
-                        'variant_id' => Schema::hasColumn('order_items', 'variant_id') ? ($it->variant_id ?? null) : null,
-                        'product_name' => $it->product_name,
-                        'sku' => $it->sku,
-                        'qty' => (int)$it->qty,
-                        'price' => (float)$it->price,
-                        'line_total' => (float)$it->line_total,
-
-                        // ✅ include variant object
-                        'variant' => $it->variant ? [
-                            'id' => $it->variant->id,
-                            'product_id' => $it->variant->product_id,
-                            'sku' => $it->variant->sku ?? null,
-                            'regular_price' => isset($it->variant->regular_price) ? (float)$it->variant->regular_price : null,
-                            'sale_price' => isset($it->variant->sale_price) ? (float)$it->variant->sale_price : null,
-                            'stock' => isset($it->variant->stock) ? (int)$it->variant->stock : null,
-                            'attributes' => $it->variant->attributes ?? null,
-
-                            // ✅ add a human readable label
-                            'label' => is_array($it->variant->attributes)
-                                ? collect($it->variant->attributes)->map(fn($v, $k) => "{$k}: {$v}")->implode(', ')
-                                : null,
-                        ] : null,
-
-                        // ✅ include product object (optional)
-                        'product' => $it->product ? [
-                            'id' => $it->product->id,
-                            'name' => $it->product->name,
-                            'sku' => $it->product->sku,
-                        ] : null,
-                    ];
-                })->values(),
-
-                'payment' => $order->payment ? [
-                    'id' => $order->payment->id,
-                    'method' => $order->payment->method,
-                    'status' => $order->payment->status,
-                    'transaction_id' => $order->payment->transaction_id,
-                    'amount_paid' => (float)$order->payment->amount_paid,
-                    'amount_due' => (float)$order->payment->amount_due,
-                ] : null,
-            ]
+            'order' => $order
         ]);
     }
 
+    // api for customer to get their orders
     public function apiCustomerOrders(Request $request)
     {
         try {
             $customer = Auth::guard('customer')->user();
+
             if (!$customer) {
                 return response()->json([
                     'success' => false,
@@ -703,39 +644,125 @@ class OrderController extends Controller
                 ], 401);
             }
 
-            $perPage = max(1, min(50, (int) $request->get('per_page', 10)));
+            $perPage = (int) $request->get('per_page', 10);
+            $perPage = max(1, min(50, $perPage));
 
-            $search = $request->get('q');
-            $status = $request->get('status');
-            $fromDate = $request->get('from_date');
-            $toDate = $request->get('to_date');
+            $search = $request->get('q');          // search order_number
+            $status = $request->get('status');      // filter status
+            $fromDate = $request->get('from_date'); // filter from date
+            $toDate = $request->get('to_date');     // filter to date
 
             $orders = Order::query()
                 ->where('customer_id', $customer->id)
-                ->with(['items', 'payment'])
-                ->when($search, fn($query) => $query->where('order_number', 'LIKE', "%{$search}%"))
-                ->when($status, fn($query) => $query->where('status', $status))
-                ->when($fromDate, fn($query) => $query->whereDate('created_at', '>=', $fromDate))
-                ->when($toDate, fn($query) => $query->whereDate('created_at', '<=', $toDate))
+                ->with(['items', 'payment']) // Eager load relationships
+                ->when($search, function ($query, $search) {
+                    return $query->where('order_number', 'LIKE', "%{$search}%");
+                })
+                ->when($status, function ($query, $status) {
+                    return $query->where('status', $status);
+                })
+                ->when($fromDate, function ($query, $fromDate) {
+                    return $query->whereDate('created_at', '>=', $fromDate);
+                })
+                ->when($toDate, function ($query, $toDate) {
+                    return $query->whereDate('created_at', '<=', $toDate);
+                })
                 ->latest()
                 ->paginate($perPage)
                 ->withQueryString();
 
-            $orders->getCollection()->transform(fn($o) => $this->transformOrderForApi($o));
+            // Transform the data to ensure proper format
+            $orders->getCollection()->transform(function ($order) {
+                return [
+                    'id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'customer_id' => $order->customer_id,
+                    'total' => (float) $order->total,
+                    'subtotal' => (float) $order->subtotal,
+                    'tax' => (float) $order->tax,
+                    'shipping_cost' => (float) $order->shipping_cost,
+                    'discount' => (float) $order->discount,
+                    'status' => $order->status,
+                    'payment_status' => $order->payment_status,
+                    'shipping_address' => $order->shipping_address,
+                    'billing_address' => $order->billing_address,
+                    'notes' => $order->notes,
+                    'created_at' => $order->created_at,
+                    'updated_at' => $order->updated_at,
+                    'items' => $order->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'product_id' => $item->product_id,
+                            'product_name' => $item->product_name,
+                            'quantity' => $item->quantity,
+                            'price' => (float) $item->price,
+                            'total' => (float) $item->total,
+                        ];
+                    }),
+                    'payment' => $order->payment ? [
+                        'id' => $order->payment->id,
+                        'method' => $order->payment->method,
+                        'status' => $order->payment->status,
+                        'transaction_id' => $order->payment->transaction_id,
+                    ] : null,
+                ];
+            });
 
             return response()->json([
                 'success' => true,
-                'orders'  => $orders,
+                'orders' => $orders,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch orders',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage()
             ], 500);
         }
     }
 
+    /**
+     * Get single order by ID for authenticated customer
+     */
+    // public function apiGetOrderById($id)
+    // {
+    //     try {
+    //         $customer = Auth::guard('customer')->user();
+
+    //         if (!$customer) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Unauthenticated'
+    //             ], 401);
+    //         }
+
+    //         $order = Order::where('customer_id', $customer->id)
+    //             ->with(['items', 'payment'])
+    //             ->find($id);
+
+    //         if (!$order) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Order not found'
+    //             ], 404);
+    //         }
+
+    //         return response()->json([
+    //             'success' => true,
+    //             'order' => $order
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Failed to fetch order',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
+
+    /**
+     * Get order statistics for the customer
+     */
     public function apiCustomerOrderStats(Request $request)
     {
         try {
@@ -749,71 +776,25 @@ class OrderController extends Controller
             }
 
             $stats = [
-                'total_orders'       => Order::where('customer_id', $customer->id)->count(),
-                'total_spent'        => (float) Order::where('customer_id', $customer->id)->sum('total'),
-                'pending_orders'     => Order::where('customer_id', $customer->id)->where('status', 'pending')->count(),
-                'processing_orders'  => Order::where('customer_id', $customer->id)->where('status', 'processing')->count(),
-                'completed_orders'   => Order::where('customer_id', $customer->id)->where('status', 'delivered')->count(),
-                'cancelled_orders'   => Order::where('customer_id', $customer->id)->where('status', 'cancelled')->count(),
-                'last_order'         => Order::where('customer_id', $customer->id)->latest()->first(),
+                'total_orders' => Order::where('customer_id', $customer->id)->count(),
+                'total_spent' => (float) Order::where('customer_id', $customer->id)->sum('total'),
+                'pending_orders' => Order::where('customer_id', $customer->id)->where('status', 'pending')->count(),
+                'processing_orders' => Order::where('customer_id', $customer->id)->where('status', 'processing')->count(),
+                'completed_orders' => Order::where('customer_id', $customer->id)->where('status', 'delivered')->count(),
+                'cancelled_orders' => Order::where('customer_id', $customer->id)->where('status', 'cancelled')->count(),
+                'last_order' => Order::where('customer_id', $customer->id)->latest()->first(),
             ];
 
             return response()->json([
                 'success' => true,
-                'stats'   => $stats
+                'stats' => $stats
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch order statistics',
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage()
             ], 500);
         }
-    }
-
-    // ---------------- API Transformer ----------------
-
-    private function transformOrderForApi($order): array
-    {
-        return [
-            'id'              => $order->id,
-            'order_number'    => $order->order_number,
-            'customer_id'     => $order->customer_id,
-            'status'          => $order->status,
-            'subtotal'        => (float) $order->subtotal,
-            'tax_amount'      => (float) ($order->tax_amount ?? 0),
-            'shipping'        => (float) ($order->shipping ?? 0),
-            'discount'        => (float) ($order->discount ?? 0),
-            'total'           => (float) $order->total,
-            'payment_method'  => $order->payment_method ?? null,
-            'payment_status'  => $order->payment_status ?? null,
-            'billing_address' => $order->billing_address,
-            'shipping_address' => $order->shipping_address,
-            'note'            => $order->note ?? null,
-            'created_at'      => $order->created_at,
-            'updated_at'      => $order->updated_at,
-
-            'items' => $order->items->map(function ($item) {
-                return [
-                    'id'           => $item->id,
-                    'product_id'   => $item->product_id,
-                    'variant_id'   => Schema::hasColumn('order_items', 'variant_id') ? ($item->variant_id ?? null) : null,
-                    'product_name' => $item->product_name,
-                    'sku'          => $item->sku,
-                    'qty'          => (int) $item->qty,
-                    'price'        => (float) $item->price,
-                    'line_total'   => (float) $item->line_total,
-                ];
-            })->values(),
-
-            'payment' => $order->payment ? [
-                'id'             => $order->payment->id,
-                'method'         => $order->payment->method,
-                'status'         => $order->payment->status,
-                'transaction_id' => $order->payment->transaction_id,
-                'amount_paid'    => (float) $order->payment->amount_paid,
-                'amount_due'     => (float) $order->payment->amount_due,
-            ] : null,
-        ];
     }
 }

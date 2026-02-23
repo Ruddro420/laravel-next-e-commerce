@@ -75,7 +75,7 @@
       <div class="flex items-center justify-between">
         <div>
           <div class="font-semibold">Order Items</div>
-          <div class="text-xs text-slate-500 dark:text-slate-400">Choose product & variant. Totals update instantly.</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400">Edit items and totals update instantly.</div>
         </div>
         <button type="button" id="btnAddItem"
           class="rounded-2xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white dark:bg-white dark:text-slate-900">
@@ -86,8 +86,8 @@
       <div id="itemsWrap" class="mt-4 space-y-3"></div>
     </div>
 
-    {{-- Shipping + Tax + Discount --}}
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    {{-- Shipping + Tax --}}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
         <label class="text-sm font-semibold">Shipping</label>
         <input id="shipping" name="shipping" type="number" step="0.01" value="{{ old('shipping',$order->shipping) }}"
@@ -107,14 +107,6 @@
           @endforeach
         </select>
       </div>
-
-      <div>
-        <label class="text-sm font-semibold">Discount (Coupon/Offer)</label>
-        <input id="discount" name="discount" type="number" step="0.01" min="0"
-          value="{{ old('discount', $order->discount ?? 0) }}"
-          class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
-        <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">This amount will be minus from total.</div>
-      </div>
     </div>
 
     {{-- Payment --}}
@@ -132,14 +124,14 @@
           <label class="text-sm font-semibold">Method</label>
           <select id="payMethod" name="payment[method]"
             class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">
-            <option value="cash_received" {{ $pm==='cash_received'?'selected':'' }}>Cash Received</option>
             <option value="cod" {{ $pm==='cod'?'selected':'' }}>Cash on Delivery</option>
+            <option value="cash_received" {{ $pm==='cash_received'?'selected':'' }}>Cash Received (Paid)</option>
             <option value="bkash" {{ $pm==='bkash'?'selected':'' }}>bKash</option>
             <option value="nagad" {{ $pm==='nagad'?'selected':'' }}>Nagad</option>
             <option value="rocket" {{ $pm==='rocket'?'selected':'' }}>Rocket</option>
           </select>
-          <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Cash Received = Paid will auto match Total.
+          <div class="text-xs text-slate-500 mt-1">
+            “Cash Received” means the order is already paid in cash.
           </div>
         </div>
 
@@ -153,48 +145,36 @@
           <label class="text-sm font-semibold">Amount Paid</label>
           <input id="amountPaid" name="payment[amount_paid]" type="number" step="0.01" value="{{ $paidVal }}"
             class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
+          <div id="paidHint" class="text-xs text-slate-500 mt-1 hidden">
+            Auto set to Total for “Cash Received”.
+          </div>
         </div>
       </div>
     </div>
 
-    {{-- Summary (Flex one row) --}}
+    {{-- Summary --}}
     <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-      <div class="font-semibold mb-3">Summary (Live)</div>
-
-      <div class="flex flex-wrap gap-3 text-sm">
-        <div class="min-w-[140px] flex-1 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+      <div class="font-semibold mb-2">Summary (Live)</div>
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
+        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <div class="text-xs text-slate-500 dark:text-slate-400">Subtotal</div>
           <div id="sumSubtotal" class="font-semibold">0.00</div>
         </div>
-
-        <div class="min-w-[140px] flex-1 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <div class="text-xs text-slate-500 dark:text-slate-400">Tax</div>
           <div id="sumTax" class="font-semibold">0.00</div>
         </div>
-
-        <div class="min-w-[140px] flex-1 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          <div class="text-xs text-slate-500 dark:text-slate-400">Shipping</div>
-          <div id="sumShipping" class="font-semibold">0.00</div>
-        </div>
-
-        <div class="min-w-[140px] flex-1 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          <div class="text-xs text-slate-500 dark:text-slate-400">Discount</div>
-          <div id="sumDiscount" class="font-semibold text-emerald-700">0.00</div>
-        </div>
-
-        <div class="min-w-[140px] flex-1 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <div class="text-xs text-slate-500 dark:text-slate-400">Total</div>
           <div id="sumTotal" class="font-semibold">0.00</div>
         </div>
-
-        <div class="min-w-[140px] flex-1 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <div class="text-xs text-slate-500 dark:text-slate-400">Paid</div>
           <div id="sumPaid" class="font-semibold">0.00</div>
         </div>
-
-        <div class="min-w-[140px] flex-1 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          <div class="text-xs text-slate-500 dark:text-slate-400">Due</div>
-          <div id="sumDue" class="font-semibold text-rose-600">0.00</div>
+        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+          <div class="text-xs text-slate-500 dark:text-slate-400">Cupon</div>
+          <div id="sumDue" class="font-semibold">0.00</div>
         </div>
       </div>
     </div>
@@ -212,6 +192,7 @@
 </div>
 
 @php
+  // Products for dropdown
   $productsJs = $products->map(function($p){
     return [
       'id'    => $p->id,
@@ -222,24 +203,24 @@
     ];
   })->values()->toArray();
 
-  // ✅ variants for dropdown (safe in blade)
-  $variantsJs = \App\Models\ProductVariant::query()
-    ->select(['id','product_id','sku','regular_price','sale_price','stock','attributes'])
-    ->get()
-    ->map(function($v){
-      $attrs = is_array($v->attributes) ? $v->attributes : (json_decode($v->attributes, true) ?: []);
-      $label = $attrs ? collect($attrs)->map(fn($val,$k)=> "{$k}: {$val}")->join(', ') : ('Variant #'.$v->id);
-      $price = (float)($v->sale_price ?? $v->regular_price ?? 0);
+  // ✅ Variants for dropdown (attributes-based label)
+  // NOTE: better to load in controller, but works here too.
+  $productIds = $products->pluck('id')->values()->toArray();
+  $variantsJs = \App\Models\ProductVariant::whereIn('product_id', $productIds)->get()->map(function($v){
+    $attrs = is_array($v->attributes) ? $v->attributes : (json_decode($v->attributes, true) ?: []);
+    $label = collect($attrs)->map(fn($val,$key) => "{$key}: {$val}")->implode(', ');
 
-      return [
-        'id' => $v->id,
-        'product_id' => $v->product_id,
-        'sku' => $v->sku,
-        'price' => $price,
-        'stock' => (int)($v->stock ?? 0),
-        'label' => $label,
-      ];
-    })->values()->toArray();
+    return [
+      'id' => (int)$v->id,
+      'product_id' => (int)$v->product_id,
+      'sku' => $v->sku,
+      'regular_price' => (float)($v->regular_price ?? 0),
+      'sale_price' => $v->sale_price !== null ? (float)$v->sale_price : null,
+      'stock' => $v->stock !== null ? (int)$v->stock : null,
+      'label' => $label ?: ("Variant #".$v->id),
+      'attributes' => $attrs,
+    ];
+  })->values()->toArray();
 @endphp
 
 <script>
@@ -251,11 +232,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const variantsByProduct = new Map();
 
   variants.forEach(v => {
-    const key = String(v.product_id);
-    if (!variantsByProduct.has(key)) variantsByProduct.set(key, []);
-    variantsByProduct.get(key).push(v);
+    const pid = String(v.product_id);
+    if (!variantsByProduct.has(pid)) variantsByProduct.set(pid, []);
+    variantsByProduct.get(pid).push(v);
   });
 
+  // existing items from DB
   const existingItems = @json($order->items);
 
   const itemsWrap = document.getElementById('itemsWrap');
@@ -263,16 +245,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const shipping = document.getElementById('shipping');
   const taxSelect = document.getElementById('taxSelect');
-  const discountInput = document.getElementById('discount');
 
   const payMethod = document.getElementById('payMethod');
   const trxWrap = document.getElementById('trxWrap');
+  const trxId = document.getElementById('trxId');
   const amountPaid = document.getElementById('amountPaid');
+  const paidHint = document.getElementById('paidHint');
 
   const sumSubtotal = document.getElementById('sumSubtotal');
   const sumTax = document.getElementById('sumTax');
-  const sumShipping = document.getElementById('sumShipping');
-  const sumDiscount = document.getElementById('sumDiscount');
   const sumTotal = document.getElementById('sumTotal');
   const sumPaid = document.getElementById('sumPaid');
   const sumDue = document.getElementById('sumDue');
@@ -297,7 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function productOptionsHtml(selectedId = ''){
-    let html = `<option value="">(Manual item)</option>`;
+    let html = `<option value="">(Keep manual item)</option>`;
     products.forEach(p => {
       const sel = String(selectedId) === String(p.id) ? 'selected' : '';
       const label = `${p.name}${p.sku ? ' — '+p.sku : ''} (Stock: ${p.stock})`;
@@ -306,12 +287,15 @@ document.addEventListener('DOMContentLoaded', () => {
     return html;
   }
 
-  function variantOptionsHtml(productId, selectedVariantId = ''){
+  function variantOptionsHtml(productId = '', selectedVid = ''){
+    if(!productId){
+      return `<option value="">No Variant</option>`;
+    }
     const list = variantsByProduct.get(String(productId)) || [];
     let html = `<option value="">No Variant</option>`;
     list.forEach(v => {
-      const sel = String(selectedVariantId) === String(v.id) ? 'selected' : '';
-      const label = `${v.label}${v.sku ? ' — '+v.sku : ''} (Stock: ${v.stock})`;
+      const sel = String(selectedVid) === String(v.id) ? 'selected' : '';
+      const label = `${v.label}${v.sku ? ' — '+v.sku : ''}${v.stock !== null ? ' (Stock: '+v.stock+')' : ''}`;
       html += `<option value="${v.id}" ${sel}>${escapeHtml(label)}</option>`;
     });
     return html;
@@ -321,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function row(i, data = null){
     const pid = data?.product_id ?? '';
-    const vid = data?.variant_id ?? '';
+    const vid = data?.variant_id ?? ''; // ✅ existing variant_id
     const name = data?.product_name ?? '';
     const sku  = data?.sku ?? '';
     const qty  = data?.qty ?? 1;
@@ -341,16 +325,27 @@ document.addEventListener('DOMContentLoaded', () => {
               class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">
               ${productOptionsHtml(pid)}
             </select>
-            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-stocklabel>Stock: —</div>
+            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-stocklabel>
+              Stock: —
+            </div>
           </div>
 
           <div class="md:col-span-2">
             <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Variant</label>
             <select name="items[${i}][variant_id]" data-variant
               class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800">
-              ${pid ? variantOptionsHtml(pid, vid) : `<option value="">Select product first</option>`}
+              ${variantOptionsHtml(pid, vid)}
             </select>
-            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-variantlabel>—</div>
+            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-variantlabel>
+              Variant: —
+            </div>
+          </div>
+
+          <div class="md:col-span-2">
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">Product Name</label>
+            <input name="items[${i}][product_name]" data-name required
+              value="${escapeHtml(name)}"
+              class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm dark:bg-slate-900 dark:border-slate-800" />
           </div>
 
           <div>
@@ -377,63 +372,102 @@ document.addEventListener('DOMContentLoaded', () => {
               class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:bg-slate-800 dark:border-slate-700" />
           </div>
         </div>
-
-        <input type="hidden" name="items[${i}][product_name]" data-name value="${escapeHtml(name)}" />
       </div>
     `;
   }
 
+  function setVariantSelectOptions(itemEl){
+    const productSel = itemEl.querySelector('[data-product]');
+    const variantSel = itemEl.querySelector('[data-variant]');
+    if(!variantSel) return;
+
+    const pid = productSel?.value || '';
+    const currentVid = variantSel.value || '';
+
+    variantSel.innerHTML = variantOptionsHtml(pid, currentVid);
+  }
+
+  function getSelectedVariant(pid, vid){
+    if(!pid || !vid) return null;
+    const list = variantsByProduct.get(String(pid)) || [];
+    return list.find(v => String(v.id) === String(vid)) || null;
+  }
+
   function fillFromProductAndVariant(itemEl){
     const productSel = itemEl.querySelector('[data-product]');
-    const pid = productSel?.value || '';
-    const p = productMap.get(String(pid));
-
     const variantSel = itemEl.querySelector('[data-variant]');
-    const vid = variantSel?.value || '';
-    const list = variantsByProduct.get(String(pid)) || [];
-    const v = list.find(x => String(x.id) === String(vid)) || null;
 
-    const nameHidden = itemEl.querySelector('[data-name]');
+    const pid = productSel?.value || '';
+    const p = productMap.get(String(pid)) || null;
+
+    const nameInput = itemEl.querySelector('[data-name]');
     const skuInput = itemEl.querySelector('[data-sku]');
     const priceInput = itemEl.querySelector('[data-price]');
     const stockLabel = itemEl.querySelector('[data-stocklabel]');
-    const variantLabel = itemEl.querySelector('[data-variantlabel]');
+    const variantLabelEl = itemEl.querySelector('[data-variantlabel]');
     const qtyInput = itemEl.querySelector('[data-qty]');
 
-    // Manual item
-    if(!pid || !p){
+    // If product not selected, keep manual fields
+    if(!p){
       stockLabel.textContent = 'Stock: —';
-      variantLabel.textContent = '—';
+      if(variantLabelEl) variantLabelEl.textContent = 'Variant: —';
       return;
     }
 
-    // product base
-    nameHidden.value = p.name || '';
+    // Ensure variant dropdown updated for this product
+    setVariantSelectOptions(itemEl);
+
+    // Auto-fill from product (baseline)
+    if(!nameInput.value) nameInput.value = p.name || '';
+    if(!skuInput.value) skuInput.value = p.sku || '';
+    if(!priceInput.value || Number(priceInput.value) === 0) {
+      priceInput.value = Number(p.price || 0).toFixed(2);
+    }
     stockLabel.textContent = `Stock: ${p.stock}`;
 
-    // if variant exists, override sku/price and append label
-    if (v) {
-      variantLabel.textContent = v.label || `Variant #${v.id}`;
-      if (v.sku) skuInput.value = v.sku;
-      if (Number.isFinite(Number(v.price))) priceInput.value = Number(v.price || 0).toFixed(2);
+    // Apply variant overrides if selected
+    const vid = variantSel?.value || '';
+    const v = getSelectedVariant(pid, vid);
 
-      const q = parseInt(qtyInput.value || '1', 10);
-      if (v.stock && q > v.stock) qtyInput.value = Math.max(1, v.stock);
+    if(v){
+      const vPrice = (v.sale_price !== null && v.sale_price !== undefined)
+        ? Number(v.sale_price)
+        : Number(v.regular_price || 0);
+
+      // Replace SKU / price with variant values (common expectation)
+      if(v.sku) skuInput.value = v.sku;
+      if(Number.isFinite(vPrice)) priceInput.value = vPrice.toFixed(2);
+
+      // Stock display
+      if(v.stock !== null && v.stock !== undefined){
+        stockLabel.textContent = `Stock: ${v.stock} (variant)`;
+        const q = parseInt(qtyInput.value || '1', 10);
+        if(q > v.stock) qtyInput.value = Math.max(1, v.stock);
+      }
+
+      if(variantLabelEl) variantLabelEl.textContent = `Variant: ${v.label || ('Variant #'+v.id)}`;
     } else {
-      variantLabel.textContent = 'No Variant';
-      // use product sku/price as fallback
-      if (p.sku) skuInput.value = p.sku;
-      if (Number.isFinite(Number(p.price))) priceInput.value = Number(p.price || 0).toFixed(2);
-
-      const q = parseInt(qtyInput.value || '1', 10);
-      if (p.stock && q > p.stock) qtyInput.value = Math.max(1, p.stock);
+      if(variantLabelEl) variantLabelEl.textContent = 'Variant: —';
     }
   }
 
   function syncPay(){
     const m = payMethod?.value;
+
     const needTrx = (m === 'bkash' || m === 'nagad' || m === 'rocket');
     trxWrap?.classList.toggle('hidden', !needTrx);
+    if(!needTrx && trxId) trxId.value = '';
+
+    // If cash_received, auto set paid to total
+    const isCashReceived = (m === 'cash_received');
+    paidHint?.classList.toggle('hidden', !isCashReceived);
+
+    if(isCashReceived){
+      // set amountPaid to current total after calc() updates sumTotal
+      // We call calc() after this anyway, but safe:
+      const totalNow = Number(sumTotal?.textContent || 0);
+      if(amountPaid) amountPaid.value = totalNow.toFixed(2);
+    }
   }
 
   function calc(){
@@ -447,9 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const line = qty * price;
 
       subtotal += line;
-
-      const lineEl = item.querySelector('[data-line]');
-      if (lineEl) lineEl.value = line.toFixed(2);
+      item.querySelector('[data-line]').value = line.toFixed(2);
     });
 
     const ship = Number(shipping?.value || 0);
@@ -470,40 +502,21 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    const totalBeforeDiscount = (mode === 'inclusive') ? base : (base + tax);
+    const total = (mode === 'inclusive') ? base : (base + tax);
 
-    // ✅ discount (coupon/offer)
-    const discount = Math.max(0, Number(discountInput?.value || 0));
-    const safeDiscount = Math.min(discount, totalBeforeDiscount);
-
-    const grandTotal = Math.max(0, totalBeforeDiscount - safeDiscount);
-
-    // ✅ paid/due
-    let paid = Number(amountPaid?.value || 0);
-
-    // Cash received = auto paid
-    if (payMethod?.value === 'cash_received') {
-      paid = grandTotal;
-      amountPaid.value = grandTotal.toFixed(2);
+    // If Cash Received, force paid = total
+    if(payMethod?.value === 'cash_received' && amountPaid){
+      amountPaid.value = total.toFixed(2);
     }
 
-    const due = Math.max(0, grandTotal - paid);
+    const paid = Number(amountPaid?.value || 0);
+    const due = Math.max(0, total - paid);
 
     sumSubtotal.textContent = subtotal.toFixed(2);
     sumTax.textContent = tax.toFixed(2);
-    sumShipping.textContent = ship.toFixed(2);
-    sumDiscount.textContent = safeDiscount.toFixed(2);
-    sumTotal.textContent = grandTotal.toFixed(2);
+    sumTotal.textContent = total.toFixed(2);
     sumPaid.textContent = paid.toFixed(2);
     sumDue.textContent = due.toFixed(2);
-
-    if (due <= 0) {
-      sumDue.classList.remove('text-rose-600');
-      sumDue.classList.add('text-emerald-600');
-    } else {
-      sumDue.classList.remove('text-emerald-600');
-      sumDue.classList.add('text-rose-600');
-    }
   }
 
   // Add item
@@ -522,36 +535,24 @@ document.addEventListener('DOMContentLoaded', () => {
     calc();
   });
 
-  // Change product -> refresh variants list
+  // Recalc on changes
   itemsWrap?.addEventListener('change', (e) => {
-    if (e.target.matches('[data-product]')) {
-      const itemEl = e.target.closest('[data-item]');
-      const pid = e.target.value || '';
-      const variantSel = itemEl.querySelector('[data-variant]');
-      if (variantSel) {
-        variantSel.innerHTML = pid ? variantOptionsHtml(pid, '') : `<option value="">Select product first</option>`;
-      }
-      calc();
-    }
-    if (e.target.matches('[data-variant]')) calc();
+    if(e.target.matches('[data-product],[data-variant]')) calc();
   });
 
   itemsWrap?.addEventListener('input', (e) => {
     if(e.target.matches('[data-qty],[data-price]')) calc();
   });
 
-  [shipping, taxSelect, discountInput, amountPaid].forEach(el => {
+  [shipping, amountPaid].forEach(el => {
     el?.addEventListener('input', calc);
   });
-
   taxSelect?.addEventListener('change', calc);
 
   payMethod?.addEventListener('change', () => {
     syncPay();
     calc();
   });
-
-  syncPay();
 
   // Render existing items
   if(Array.isArray(existingItems) && existingItems.length){
@@ -563,6 +564,8 @@ document.addEventListener('DOMContentLoaded', () => {
     btnAddItem?.click();
   }
 
+  // init
+  syncPay();
   calc();
 });
 </script>

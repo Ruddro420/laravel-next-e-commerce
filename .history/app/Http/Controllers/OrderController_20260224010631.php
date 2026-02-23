@@ -289,7 +289,7 @@ class OrderController extends Controller
             'items.*.variantId'  => ['nullable', 'integer', 'exists:product_variants,id'],
 
             'payment'                       => ['required', 'array'],
-            'payment.method' => ['required', Rule::in(['cod', 'cash_received', 'bkash', 'nagad', 'rocket'])],
+            'payment.method'                => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
             'payment.amount_paid'           => ['nullable', 'numeric', 'min:0'],
             'payment.transaction_id'        => [
                 'nullable',
@@ -308,18 +308,18 @@ class OrderController extends Controller
         $subtotal = 0.0;
 
         // Handle both id and product_id
-        $items = array_map(function ($it) {
-            if (empty($it['product_id']) && !empty($it['id'])) {
-                $it['product_id'] = $it['id'];
-            }
+     $items = array_map(function ($it) {
+    if (empty($it['product_id']) && !empty($it['id'])) {
+        $it['product_id'] = $it['id'];
+    }
 
-            // ✅ normalize variantId (camelCase) -> variant_id (snake_case)
-            if (!isset($it['variant_id']) && isset($it['variantId'])) {
-                $it['variant_id'] = $it['variantId'];
-            }
+    // ✅ normalize variantId (camelCase) -> variant_id (snake_case)
+    if (!isset($it['variant_id']) && isset($it['variantId'])) {
+        $it['variant_id'] = $it['variantId'];
+    }
 
-            return $it;
-        }, $items);
+    return $it;
+}, $items);
 
         $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
         $products   = Product::whereIn('id', $productIds)->get()->keyBy('id');
@@ -494,7 +494,6 @@ class OrderController extends Controller
 
     private function calcPaymentStatus(string $method, float $paid, float $due): string
     {
-        if ($method === 'cash_received') return 'paid';
         if ($method === 'cod') return 'pending';
         if ($paid <= 0 && $due > 0) return 'unpaid';
         if ($due <= 0.00001 && $paid > 0) return 'paid';
@@ -656,20 +655,20 @@ class OrderController extends Controller
                         'line_total' => (float)$it->line_total,
 
                         // ✅ include variant object
-                        'variant' => $it->variant ? [
-                            'id' => $it->variant->id,
-                            'product_id' => $it->variant->product_id,
-                            'sku' => $it->variant->sku ?? null,
-                            'regular_price' => isset($it->variant->regular_price) ? (float)$it->variant->regular_price : null,
-                            'sale_price' => isset($it->variant->sale_price) ? (float)$it->variant->sale_price : null,
-                            'stock' => isset($it->variant->stock) ? (int)$it->variant->stock : null,
-                            'attributes' => $it->variant->attributes ?? null,
+                       'variant' => $it->variant ? [
+    'id' => $it->variant->id,
+    'product_id' => $it->variant->product_id,
+    'sku' => $it->variant->sku ?? null,
+    'regular_price' => isset($it->variant->regular_price) ? (float)$it->variant->regular_price : null,
+    'sale_price' => isset($it->variant->sale_price) ? (float)$it->variant->sale_price : null,
+    'stock' => isset($it->variant->stock) ? (int)$it->variant->stock : null,
+    'attributes' => $it->variant->attributes ?? null,
 
-                            // ✅ add a human readable label
-                            'label' => is_array($it->variant->attributes)
-                                ? collect($it->variant->attributes)->map(fn($v, $k) => "{$k}: {$v}")->implode(', ')
-                                : null,
-                        ] : null,
+    // ✅ add a human readable label
+    'label' => is_array($it->variant->attributes)
+        ? collect($it->variant->attributes)->map(fn($v, $k) => "{$k}: {$v}")->implode(', ')
+        : null,
+] : null,
 
                         // ✅ include product object (optional)
                         'product' => $it->product ? [

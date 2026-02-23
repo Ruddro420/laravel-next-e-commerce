@@ -1,0 +1,835 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Order;
+use App\Models\Customer;
+use App\Models\Coupon;
+use App\Models\ProductVariant;
+use App\Models\TaxRate;
+use App\Models\Product;
+use App\Services\StockService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+class OrderController extends Controller
+{
+    // ============================================================
+    //  CRM — Web Routes
+    // ============================================================
+
+    public function index(Request $request)
+    {
+        $q = $request->get('q');
+
+        $orders = Order::with(['customer', 'payment'])
+            ->when($q, function ($qr) use ($q) {
+                $qr->where('order_number', 'like', "%{$q}%")
+                    ->orWhereHas('customer', function ($c) use ($q) {
+                        $c->where('name', 'like', "%{$q}%")
+                            ->orWhere('email', 'like', "%{$q}%")
+                            ->orWhere('phone', 'like', "%{$q}%");
+                    });
+            })
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
+
+        return view('pages.crm.orders.index', compact('orders', 'q'));
+    }
+
+    public function create()
+    {
+        $customers = Customer::orderBy('name')->get();
+        $taxRates  = TaxRate::where('is_active', true)->orderBy('name')->get();
+        $products  = Product::where('is_active', 1)->orderBy('name')->get();
+
+        return view('pages.crm.orders.create', compact('customers', 'taxRates', 'products'));
+    }
+
+    public function store(Request $request)
+    {
+        $data = $this->validateOrder($request);
+
+        return DB::transaction(function () use ($data) {
+
+            $customer = !empty($data['customer_id'])
+                ? Customer::find($data['customer_id'])
+                : null;
+
+            [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
+
+            [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
+                $data['coupon_code'] ?? null,
+                $subtotal
+            );
+
+            [$taxRateId, $taxAmount] = $this->applyTax(
+                $data['tax_rate_id'] ?? null,
+                $subtotal - $couponDiscount + (float) ($data['shipping'] ?? 0)
+            );
+
+            $total = max(0, $subtotal - $couponDiscount + (float) ($data['shipping'] ?? 0) + $taxAmount);
+
+            $this->deductStockOrFail($itemsPayload);
+
+            $orderAttrs = [
+                'order_number'     => $this->makeOrderNumber(),
+                'customer_id'      => $customer?->id,
+                'status'           => $data['status'],
+                'subtotal'         => $subtotal,
+                'shipping'         => (float) ($data['shipping'] ?? 0),
+                'total'            => $total,
+                'billing_address'  => $data['billing_address'] ?? $customer?->billing_address,
+                'shipping_address' => $data['shipping_address'] ?? $customer?->shipping_address,
+                'note'             => $data['note'] ?? null,
+            ];
+
+            if (Schema::hasColumn('orders', 'discount'))         $orderAttrs['discount']         = $couponDiscount;
+            if (Schema::hasColumn('orders', 'coupon_id'))        $orderAttrs['coupon_id']        = $couponId;
+            if (Schema::hasColumn('orders', 'coupon_code'))      $orderAttrs['coupon_code']      = $couponCode;
+            if (Schema::hasColumn('orders', 'coupon_discount'))  $orderAttrs['coupon_discount']  = $couponDiscount;
+            if (Schema::hasColumn('orders', 'tax_rate_id'))      $orderAttrs['tax_rate_id']      = $taxRateId;
+            if (Schema::hasColumn('orders', 'tax_amount'))       $orderAttrs['tax_amount']       = $taxAmount;
+
+            $order = Order::create($orderAttrs);
+            $order->items()->createMany($itemsPayload);
+
+            $pay          = $data['payment'];
+            $amountPaid   = (float) ($pay['amount_paid'] ?? 0);
+            $amountDue    = max(0, $total - $amountPaid);
+            $paymentStatus = $this->calcPaymentStatus($pay['method'], $amountPaid, $amountDue);
+
+            if (method_exists($order, 'payment')) {
+                $order->payment()->create([
+                    'method'         => $pay['method'],
+                    'transaction_id' => $pay['transaction_id'] ?? null,
+                    'amount_paid'    => $amountPaid,
+                    'amount_due'     => $amountDue,
+                    'status'         => $paymentStatus,
+                    'paid_at'        => $paymentStatus === 'paid' ? now() : null,
+                ]);
+            }
+
+            $updates = [];
+            if (Schema::hasColumn('orders', 'payment_method')) $updates['payment_method'] = $pay['method'];
+            if (Schema::hasColumn('orders', 'payment_status'))  $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
+            if (!empty($updates)) $order->update($updates);
+
+            if ($couponId) Coupon::where('id', $couponId)->increment('used_count');
+
+            return redirect()->route('crm.orders')->with('success', 'Order created successfully!');
+        });
+    }
+
+    public function show(Order $order)
+    {
+        $order->load(['customer', 'items.product', 'items.variant', 'payment']);
+        return view('pages.crm.orders.show', compact('order'));
+    }
+
+    public function edit(Order $order)
+    {
+        $order->load(['customer', 'items.product', 'items.variant', 'payment']);
+        $customers = Customer::orderBy('name')->get();
+        $taxRates  = TaxRate::where('is_active', true)->orderBy('name')->get();
+        $products  = Product::where('is_active', 1)->orderBy('name')->get();
+
+        return view('pages.crm.orders.edit', compact('order', 'customers', 'taxRates', 'products'));
+    }
+
+    public function update(Request $request, Order $order)
+    {
+        $data = $this->validateOrder($request);
+
+        return DB::transaction(function () use ($data, $order) {
+
+            $customer = !empty($data['customer_id'])
+                ? Customer::find($data['customer_id'])
+                : null;
+
+            // Restore stock for old items before recalculating
+            $oldItems = $order->items()->get()->map(fn($i) => [
+                'product_id' => $i->product_id,
+                'qty'        => (int) $i->qty,
+            ])->toArray();
+
+            $this->restoreStock($order, $oldItems);
+
+            [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
+
+            [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
+                $data['coupon_code'] ?? null,
+                $subtotal
+            );
+
+            [$taxRateId, $taxAmount] = $this->applyTax(
+                $data['tax_rate_id'] ?? null,
+                $subtotal - $couponDiscount + (float) ($data['shipping'] ?? 0)
+            );
+
+            $total = max(0, $subtotal - $couponDiscount + (float) ($data['shipping'] ?? 0) + $taxAmount);
+
+            $this->deductStockOrFail($itemsPayload);
+
+            $orderAttrs = [
+                'customer_id'      => $customer?->id,
+                'status'           => $data['status'],
+                'subtotal'         => $subtotal,
+                'shipping'         => (float) ($data['shipping'] ?? 0),
+                'total'            => $total,
+                'billing_address'  => $data['billing_address'] ?? $customer?->billing_address,
+                'shipping_address' => $data['shipping_address'] ?? $customer?->shipping_address,
+                'note'             => $data['note'] ?? null,
+            ];
+
+            if (Schema::hasColumn('orders', 'discount'))         $orderAttrs['discount']         = $couponDiscount;
+            if (Schema::hasColumn('orders', 'coupon_id'))        $orderAttrs['coupon_id']        = $couponId;
+            if (Schema::hasColumn('orders', 'coupon_code'))      $orderAttrs['coupon_code']      = $couponCode;
+            if (Schema::hasColumn('orders', 'coupon_discount'))  $orderAttrs['coupon_discount']  = $couponDiscount;
+            if (Schema::hasColumn('orders', 'tax_rate_id'))      $orderAttrs['tax_rate_id']      = $taxRateId;
+            if (Schema::hasColumn('orders', 'tax_amount'))       $orderAttrs['tax_amount']       = $taxAmount;
+
+            $order->update($orderAttrs);
+
+            // Replace all items
+            $order->items()->delete();
+            $order->items()->createMany($itemsPayload);
+
+            $pay           = $data['payment'];
+            $amountPaid    = (float) ($pay['amount_paid'] ?? 0);
+            $amountDue     = max(0, $total - $amountPaid);
+            $paymentStatus = $this->calcPaymentStatus($pay['method'], $amountPaid, $amountDue);
+
+            if (method_exists($order, 'payment')) {
+                $order->payment()->updateOrCreate(
+                    ['order_id' => $order->id],
+                    [
+                        'method'         => $pay['method'],
+                        'transaction_id' => $pay['transaction_id'] ?? null,
+                        'amount_paid'    => $amountPaid,
+                        'amount_due'     => $amountDue,
+                        'status'         => $paymentStatus,
+                        'paid_at'        => $paymentStatus === 'paid' ? now() : null,
+                    ]
+                );
+            }
+
+            $updates = [];
+            if (Schema::hasColumn('orders', 'payment_method')) $updates['payment_method'] = $pay['method'];
+            if (Schema::hasColumn('orders', 'payment_status'))  $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
+            if (!empty($updates)) $order->update($updates);
+
+            return back()->with('success', 'Order updated successfully!');
+        });
+    }
+
+    public function destroy(Order $order)
+    {
+        return DB::transaction(function () use ($order) {
+
+            $oldItems = $order->items()->get()->map(fn($i) => [
+                'product_id' => $i->product_id,
+                'qty'        => (int) $i->qty,
+            ])->toArray();
+
+            $this->restoreStock($order, $oldItems);
+            $order->delete();
+
+            return redirect()->route('crm.orders')->with('success', 'Order deleted successfully!');
+        });
+    }
+
+    // ============================================================
+    //  API — Customer-Facing Routes
+    // ============================================================
+
+    /**
+     * POST /api/checkout
+     * Called from Next.js checkout page.
+     * Requires auth:customer guard (Bearer token in Authorization header).
+     *
+     * Expected payload from checkout.js:
+     * {
+     *   status: "processing",
+     *   coupon_code: null | "SAVE10",
+     *   tax_rate_id: null | int,
+     *   shipping: 0 | 80 | 150,
+     *   billing_address: "House, Area, City",
+     *   shipping_address: "House, Area, City",
+     *   note: null | "string",
+     *   items: [
+     *     {
+     *       product_id: int,       // or "id" — both accepted
+     *       variant_id: int|null,  // ✅ from cart item.variant_id
+     *       product_name: "string",
+     *       sku: "string"|null,
+     *       qty: int,
+     *       price: float
+     *     }
+     *   ],
+     *   payment: {
+     *     method: "cod"|"bkash"|"nagad"|"rocket",
+     *     transaction_id: null | "TXN123",
+     *     amount_paid: 0 | float
+     *   }
+     * }
+     */
+    public function apiCheckout(Request $request)
+    {
+        // Authenticate customer from Bearer token
+        $authCustomer = Auth::guard('customer')->user();
+        if (!$authCustomer) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please login to place an order.',
+            ], 401);
+        }
+
+        $data = $this->validateOrder($request);
+
+        // Always use the authenticated customer — ignore any customer_id in payload
+        $data['customer_id'] = $authCustomer->id;
+
+        return DB::transaction(function () use ($data, $authCustomer) {
+
+            $customer = Customer::find($data['customer_id']);
+            if (!$customer) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Customer account not found.',
+                ], 404);
+            }
+
+            [$subtotal, $itemsPayload] = $this->buildItemsSafe($data['items']);
+
+            [$couponId, $couponCode, $couponDiscount] = $this->applyCoupon(
+                $data['coupon_code'] ?? null,
+                $subtotal
+            );
+
+            [$taxRateId, $taxAmount] = $this->applyTax(
+                $data['tax_rate_id'] ?? null,
+                $subtotal - $couponDiscount + (float) ($data['shipping'] ?? 0)
+            );
+
+            $total = max(0, $subtotal - $couponDiscount + (float) ($data['shipping'] ?? 0) + $taxAmount);
+
+            // Deduct stock — aborts transaction if stock is insufficient
+            $this->deductStockOrFail($itemsPayload);
+
+            $orderAttrs = [
+                'order_number'     => $this->makeOrderNumber(),
+                'customer_id'      => $customer->id,
+                'status'           => $data['status'],
+                'subtotal'         => $subtotal,
+                'shipping'         => (float) ($data['shipping'] ?? 0),
+                'total'            => $total,
+                'billing_address'  => $data['billing_address'] ?? $customer->billing_address,
+                'shipping_address' => $data['shipping_address'] ?? $customer->shipping_address,
+                'note'             => $data['note'] ?? null,
+            ];
+
+            if (Schema::hasColumn('orders', 'discount'))         $orderAttrs['discount']         = $couponDiscount;
+            if (Schema::hasColumn('orders', 'coupon_id'))        $orderAttrs['coupon_id']        = $couponId;
+            if (Schema::hasColumn('orders', 'coupon_code'))      $orderAttrs['coupon_code']      = $couponCode;
+            if (Schema::hasColumn('orders', 'coupon_discount'))  $orderAttrs['coupon_discount']  = $couponDiscount;
+            if (Schema::hasColumn('orders', 'tax_rate_id'))      $orderAttrs['tax_rate_id']      = $taxRateId;
+            if (Schema::hasColumn('orders', 'tax_amount'))       $orderAttrs['tax_amount']       = $taxAmount;
+
+            $order = Order::create($orderAttrs);
+            $order->items()->createMany($itemsPayload);
+
+            $pay           = $data['payment'];
+            $amountPaid    = (float) ($pay['amount_paid'] ?? 0);
+            $amountDue     = max(0, $total - $amountPaid);
+            $paymentStatus = $this->calcPaymentStatus($pay['method'], $amountPaid, $amountDue);
+
+            if (method_exists($order, 'payment')) {
+                $order->payment()->create([
+                    'method'         => $pay['method'],
+                    'transaction_id' => $pay['transaction_id'] ?? null,
+                    'amount_paid'    => $amountPaid,
+                    'amount_due'     => $amountDue,
+                    'status'         => $paymentStatus,
+                    'paid_at'        => $paymentStatus === 'paid' ? now() : null,
+                ]);
+            }
+
+            $updates = [];
+            if (Schema::hasColumn('orders', 'payment_method')) $updates['payment_method'] = $pay['method'];
+            if (Schema::hasColumn('orders', 'payment_status'))  $updates['payment_status'] = ($paymentStatus === 'paid') ? 'paid' : 'unpaid';
+            if (!empty($updates)) $order->update($updates);
+
+            if ($couponId) Coupon::where('id', $couponId)->increment('used_count');
+
+            // Reload full relationships for response
+            $order->load(['customer', 'payment', 'items.product', 'items.variant']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Order placed successfully',
+                'order'   => $this->transformOrderForApi($order),
+            ], 201);
+        });
+    }
+
+    /**
+     * GET /api/customer-auth/customer/orders/{id}
+     * Returns a single order for the authenticated customer.
+     * Security: only returns orders belonging to the current customer.
+     */
+    public function apiCustomerOrderById(Request $request, $id)
+    {
+        $customer = Auth::guard('customer')->user();
+        if (!$customer) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $order = Order::with([
+            'customer',
+            'payment',
+            'items.product',
+            'items.variant',
+        ])
+            ->where('id', $id)
+            ->where('customer_id', $customer->id) // ✅ Security: only own orders
+            ->first();
+
+        if (!$order) {
+            return response()->json(['success' => false, 'message' => 'Order not found'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'order'   => $this->transformOrderForApi($order),
+        ]);
+    }
+
+    /**
+     * GET /api/customer-auth/customer/orders (with optional ?q=&status=&from_date=&to_date=&per_page=)
+     * Returns paginated order list for the authenticated customer.
+     */
+    public function apiCustomerOrders(Request $request)
+    {
+        try {
+            $customer = Auth::guard('customer')->user();
+            if (!$customer) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $perPage  = max(1, min(50, (int) $request->get('per_page', 10)));
+            $search   = $request->get('q');
+            $status   = $request->get('status');
+            $fromDate = $request->get('from_date');
+            $toDate   = $request->get('to_date');
+
+            $orders = Order::query()
+                ->where('customer_id', $customer->id)
+                ->with(['items.product', 'items.variant', 'payment'])
+                ->when($search,   fn($q) => $q->where('order_number', 'LIKE', "%{$search}%"))
+                ->when($status,   fn($q) => $q->where('status', $status))
+                ->when($fromDate, fn($q) => $q->whereDate('created_at', '>=', $fromDate))
+                ->when($toDate,   fn($q) => $q->whereDate('created_at', '<=', $toDate))
+                ->latest()
+                ->paginate($perPage)
+                ->withQueryString();
+
+            $orders->getCollection()->transform(fn($o) => $this->transformOrderForApi($o));
+
+            return response()->json(['success' => true, 'orders' => $orders]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch orders',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/customer-auth/customer/order-stats
+     * Returns order statistics for the authenticated customer.
+     */
+    public function apiCustomerOrderStats(Request $request)
+    {
+        try {
+            $customer = Auth::guard('customer')->user();
+            if (!$customer) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $base = Order::where('customer_id', $customer->id);
+
+            $stats = [
+                'total_orders'      => (clone $base)->count(),
+                'total_spent'       => (float) (clone $base)->sum('total'),
+                'pending_orders'    => (clone $base)->where('status', 'pending')->count(),
+                'processing_orders' => (clone $base)->where('status', 'processing')->count(),
+                'completed_orders'  => (clone $base)->where('status', 'delivered')->count(),
+                'cancelled_orders'  => (clone $base)->where('status', 'cancelled')->count(),
+                'last_order'        => (clone $base)->latest()->first(),
+            ];
+
+            return response()->json(['success' => true, 'stats' => $stats]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch order statistics',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // ============================================================
+    //  Validation
+    // ============================================================
+
+    private function validateOrder(Request $request): array
+    {
+        return $request->validate([
+            'customer_id'      => ['nullable', 'integer', 'exists:customers,id'],
+            'status'           => ['required', Rule::in(['processing', 'complete', 'hold'])],
+            'coupon_code'      => ['nullable', 'string', 'max:50'],
+            'tax_rate_id'      => ['nullable', 'integer', 'exists:tax_rates,id'],
+            'shipping'         => ['nullable', 'numeric', 'min:0'],
+            'billing_address'  => ['nullable', 'string', 'max:4000'],
+            'shipping_address' => ['nullable', 'string', 'max:4000'],
+            'note'             => ['nullable', 'string', 'max:4000'],
+
+            'items'                 => ['required', 'array', 'min:1'],
+            'items.*.product_id'    => ['nullable', 'integer', 'exists:products,id'],
+            'items.*.id'            => ['nullable', 'integer', 'exists:products,id'],
+            // ✅ variant_id: optional, must belong to a valid product_variants row
+            'items.*.variant_id'    => ['nullable', 'integer', 'exists:product_variants,id'],
+            'items.*.product_name'  => ['required', 'string', 'max:200'],
+            'items.*.sku'           => ['nullable', 'string', 'max:120'],
+            'items.*.qty'           => ['required', 'integer', 'min:1'],
+            'items.*.price'         => ['required', 'numeric', 'min:0'],
+
+            'payment'                  => ['required', 'array'],
+            'payment.method'           => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
+            'payment.amount_paid'      => ['nullable', 'numeric', 'min:0'],
+            'payment.transaction_id'   => [
+                'nullable',
+                'string',
+                'max:120',
+                Rule::requiredIf(
+                    fn() => in_array($request->input('payment.method'), ['bkash', 'nagad', 'rocket'])
+                ),
+            ],
+        ]);
+    }
+
+    // ============================================================
+    //  Item Builder
+    // ============================================================
+
+    /**
+     * Builds the order_items payload from raw request items.
+     * Accepts both "product_id" and "id" keys (API flexibility).
+     * Validates variant belongs to the chosen product.
+     * Stores variant_id in the row if the column exists.
+     *
+     * Returns [$subtotal, $itemsPayload]
+     */
+    private function buildItemsSafe(array $items): array
+    {
+        $payload  = [];
+        $subtotal = 0.0;
+
+        // Normalise: accept items[].id OR items[].product_id
+        $items = array_map(function ($it) {
+            if (empty($it['product_id']) && !empty($it['id'])) {
+                $it['product_id'] = $it['id'];
+            }
+            return $it;
+        }, $items);
+
+        // Eager-load all referenced products and variants in one query each
+        $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
+        $products   = Product::whereIn('id', $productIds)->get()->keyBy('id');
+
+        $variantIds = collect($items)->pluck('variant_id')->filter()->unique()->values();
+        $variants   = ProductVariant::whereIn('id', $variantIds)->get()->keyBy('id');
+
+        $hasVariantColumn = Schema::hasColumn('order_items', 'variant_id');
+
+        foreach ($items as $it) {
+            $pid = !empty($it['product_id']) ? (int) $it['product_id'] : null;
+            $vid = !empty($it['variant_id']) ? (int) $it['variant_id'] : null;
+
+            $p = $pid ? $products->get($pid) : null;
+
+            // Unknown product_id → treat as manual / guest item
+            if ($pid && !$p) {
+                $pid = null;
+            }
+
+            // ✅ Validate variant: must exist AND belong to the selected product
+            $v = $vid ? $variants->get($vid) : null;
+            if ($vid && (!$v || ($pid && (int) $v->product_id !== (int) $pid))) {
+                $vid = null;
+                $v   = null;
+            }
+
+            $qty   = max(1, (int) ($it['qty'] ?? 1));
+            $price = (float) ($it['price'] ?? 0);
+
+            // Build display name — append variant label if present
+            $name = $p?->name ?? ($it['product_name'] ?? '');
+            $sku  = $p?->sku  ?? ($it['sku'] ?? null);
+
+            if ($v) {
+                // Override SKU with variant SKU if available
+                if (!empty($v->sku)) {
+                    $sku = $v->sku;
+                }
+                // Append variant label to product name
+                $variantLabel = $v->name ?? $v->value ?? null;
+                if ($variantLabel) {
+                    $name = $name . ' - ' . $variantLabel;
+                }
+            }
+
+            $line     = $qty * $price;
+            $subtotal += $line;
+
+            $row = [
+                'product_id'   => $pid,
+                'product_name' => $name,
+                'sku'          => $sku,
+                'qty'          => $qty,
+                'price'        => $price,
+                'line_total'   => $line,
+            ];
+
+            // ✅ Only include variant_id if the column exists in order_items
+            if ($hasVariantColumn) {
+                $row['variant_id'] = $vid;
+            }
+
+            $payload[] = $row;
+        }
+
+        return [round($subtotal, 2), $payload];
+    }
+
+    // ============================================================
+    //  Stock Management
+    // ============================================================
+
+    private function deductStockOrFail(array $itemsPayload): void
+    {
+        foreach ($itemsPayload as $row) {
+            $pid = $row['product_id'] ?? null;
+            if (!$pid) continue;
+
+            $p    = Product::where('id', $pid)->lockForUpdate()->first();
+            $need = (int) ($row['qty'] ?? 0);
+
+            if (!$p || $need <= 0) continue;
+
+            if ($p->stock !== null && $need > (int) $p->stock) {
+                abort(422, "Not enough stock for \"{$p->name}\". Available: {$p->stock}");
+            }
+
+            if (class_exists(StockService::class) && method_exists(StockService::class, 'move')) {
+                StockService::move($p, 'out', $need, null, 'Order stock deducted', null);
+            } else {
+                if ($p->stock !== null) {
+                    $p->stock = (int) $p->stock - $need;
+                    $p->save();
+                }
+            }
+        }
+    }
+
+    private function restoreStock(Order $order, array $oldItems): void
+    {
+        foreach ($oldItems as $it) {
+            $pid = $it['product_id'] ?? null;
+            if (!$pid) continue;
+
+            $p   = Product::where('id', $pid)->lockForUpdate()->first();
+            $qty = (int) ($it['qty'] ?? 0);
+
+            if (!$p || $qty <= 0) continue;
+
+            if (class_exists(StockService::class) && method_exists(StockService::class, 'move')) {
+                StockService::move($p, 'in', $qty, $order->id, 'Order stock restored', $order->order_number);
+            } else {
+                if ($p->stock !== null) {
+                    $p->stock = (int) $p->stock + $qty;
+                    $p->save();
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    //  Coupon / Tax / Payment helpers
+    // ============================================================
+
+    private function applyCoupon(?string $code, float $subtotal): array
+    {
+        $code = strtoupper(trim((string) $code));
+        if (!$code) return [null, null, 0.0];
+
+        $coupon = Coupon::where('code', $code)->first();
+        if (!$coupon || !$coupon->is_active) return [null, null, 0.0];
+
+        $now = now();
+        if ($coupon->starts_at  && $now->lt($coupon->starts_at))  return [null, null, 0.0];
+        if ($coupon->expires_at && $now->gt($coupon->expires_at)) return [null, null, 0.0];
+        if ($subtotal < (float) $coupon->min_order_amount)         return [null, null, 0.0];
+        if ($coupon->usage_limit !== null && $coupon->used_count >= $coupon->usage_limit) {
+            return [null, null, 0.0];
+        }
+
+        $discount = ($coupon->type === 'percent')
+            ? ($subtotal * (float) $coupon->value) / 100.0
+            : (float) $coupon->value;
+
+        $discount = min($discount, $subtotal);
+
+        return [$coupon->id, $coupon->code, round($discount, 2)];
+    }
+
+    private function applyTax(?int $taxRateId, float $base): array
+    {
+        if (!$taxRateId) return [null, 0.0];
+
+        $tax = TaxRate::where('id', $taxRateId)->where('is_active', true)->first();
+        if (!$tax) return [null, 0.0];
+
+        $rate = (float) $tax->rate;
+
+        if ($tax->mode === 'exclusive') {
+            return [$tax->id, round(($base * $rate) / 100.0, 2)];
+        }
+
+        if ($rate <= 0) return [$tax->id, 0.0];
+
+        $div     = 1 + ($rate / 100.0);
+        $taxPart = $base - ($base / $div);
+
+        return [$tax->id, round($taxPart, 2)];
+    }
+
+    /**
+     * Determines payment status based on method and amounts.
+     * COD is always "pending" until delivery.
+     */
+    private function calcPaymentStatus(string $method, float $paid, float $due): string
+    {
+        if ($method === 'cod')           return 'pending';
+        if ($paid <= 0 && $due > 0)     return 'unpaid';
+        if ($due <= 0.00001 && $paid > 0) return 'paid';
+        return 'partial';
+    }
+
+    private function makeOrderNumber(): string
+    {
+        return 'ORD-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4));
+    }
+
+    // ============================================================
+    //  API Transformer
+    // ============================================================
+
+    /**
+     * Transforms an Order model into the JSON shape consumed by
+     * the Next.js order-confirmation page.
+     *
+     * Includes:
+     *  - customer object (name, phone, email)
+     *  - items[].variant object (id, name, value, sku, price)
+     *  - items[].product object (id, name, sku)
+     *  - payment object
+     *  - coupon_discount field
+     */
+    private function transformOrderForApi($order): array
+    {
+        return [
+            'id'               => $order->id,
+            'order_number'     => $order->order_number,
+            'customer_id'      => $order->customer_id,
+
+            // ✅ Full customer object for the confirmation page greeting
+            'customer'         => $order->customer ? [
+                'id'    => $order->customer->id,
+                'name'  => $order->customer->name,
+                'email' => $order->customer->email,
+                'phone' => $order->customer->phone,
+            ] : null,
+
+            'status'           => $order->status,
+            'subtotal'         => (float) $order->subtotal,
+            'tax_amount'       => (float) ($order->tax_amount ?? 0),
+            'shipping'         => (float) ($order->shipping ?? 0),
+            'discount'         => (float) ($order->discount ?? $order->coupon_discount ?? 0),
+            'coupon_discount'  => (float) ($order->coupon_discount ?? 0),
+            'total'            => (float) $order->total,
+
+            // Redundant flat fields for simpler frontend access
+            'payment_method'   => $order->payment_method ?? $order->payment?->method  ?? null,
+            'payment_status'   => $order->payment_status ?? $order->payment?->status  ?? null,
+
+            'billing_address'  => $order->billing_address,
+            'shipping_address' => $order->shipping_address,
+            'note'             => $order->note ?? null,
+            'created_at'       => $order->created_at,
+            'updated_at'       => $order->updated_at,
+
+            // ✅ Items with full variant + product sub-objects
+            'items' => $order->items->map(function ($item) {
+                return [
+                    'id'           => $item->id,
+                    'product_id'   => $item->product_id,
+                    'variant_id'   => Schema::hasColumn('order_items', 'variant_id')
+                        ? ($item->variant_id ?? null)
+                        : null,
+                    'product_name' => $item->product_name,
+                    'sku'          => $item->sku,
+                    'qty'          => (int) $item->qty,
+                    'price'        => (float) $item->price,
+                    'line_total'   => (float) $item->line_total,
+
+                    // ✅ Variant object — consumed by getVariantLabel() in Next.js
+                    'variant' => $item->variant ? [
+                        'id'         => $item->variant->id,
+                        'product_id' => $item->variant->product_id,
+                        'name'       => $item->variant->name  ?? null,
+                        'value'      => $item->variant->value ?? null,
+                        'sku'        => $item->variant->sku   ?? null,
+                        'price'      => isset($item->variant->price)
+                            ? (float) $item->variant->price
+                            : null,
+                    ] : null,
+
+                    // ✅ Product object
+                    'product' => $item->product ? [
+                        'id'   => $item->product->id,
+                        'name' => $item->product->name,
+                        'sku'  => $item->product->sku,
+                    ] : null,
+                ];
+            })->values(),
+
+            // ✅ Payment object
+            'payment' => $order->payment ? [
+                'id'             => $order->payment->id,
+                'method'         => $order->payment->method,
+                'status'         => $order->payment->status,
+                'transaction_id' => $order->payment->transaction_id,
+                'amount_paid'    => (float) $order->payment->amount_paid,
+                'amount_due'     => (float) $order->payment->amount_due,
+            ] : null,
+        ];
+    }
+}

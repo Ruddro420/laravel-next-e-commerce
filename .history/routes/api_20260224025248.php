@@ -82,4 +82,3 @@ Route::post('products/{id}/reviews', [ReviewApiController::class, 'storeForProdu
 
 // optional (for a global review page/filter)
 Route::get('reviews', [ReviewApiController::class, 'index']);
-

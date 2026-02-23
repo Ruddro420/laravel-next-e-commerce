@@ -289,7 +289,7 @@ class OrderController extends Controller
             'items.*.variantId'  => ['nullable', 'integer', 'exists:product_variants,id'],
 
             'payment'                       => ['required', 'array'],
-            'payment.method' => ['required', Rule::in(['cod', 'cash_received', 'bkash', 'nagad', 'rocket'])],
+            'payment.method'                => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
             'payment.amount_paid'           => ['nullable', 'numeric', 'min:0'],
             'payment.transaction_id'        => [
                 'nullable',
@@ -494,7 +494,6 @@ class OrderController extends Controller
 
     private function calcPaymentStatus(string $method, float $paid, float $due): string
     {
-        if ($method === 'cash_received') return 'paid';
         if ($method === 'cod') return 'pending';
         if ($paid <= 0 && $due > 0) return 'unpaid';
         if ($due <= 0.00001 && $paid > 0) return 'paid';

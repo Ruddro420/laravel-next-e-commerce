@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\Customer;
 use App\Models\Coupon;
-use App\Models\ProductVariant;
 use App\Models\TaxRate;
 use App\Models\Product;
 use App\Services\StockService;
@@ -138,8 +137,7 @@ class OrderController extends Controller
 
     public function show(Order $order)
     {
-        $order->load(['customer', 'items.product', 'payment', 'items.variant']);
-        // dd($order->items->map(fn($item) => $item->variant));
+        $order->load(['customer', 'items.product', 'payment']);
         return view('pages.crm.orders.show', compact('order'));
     }
 
@@ -284,12 +282,8 @@ class OrderController extends Controller
             'items.*.qty'           => ['required', 'integer', 'min:1'],
             'items.*.price'         => ['required', 'numeric', 'min:0'],
 
-            'items.*.variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-            // OPTIONAL: if sometimes camelCase comes from frontend
-            'items.*.variantId'  => ['nullable', 'integer', 'exists:product_variants,id'],
-
             'payment'                       => ['required', 'array'],
-            'payment.method' => ['required', Rule::in(['cod', 'cash_received', 'bkash', 'nagad', 'rocket'])],
+            'payment.method'                => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
             'payment.amount_paid'           => ['nullable', 'numeric', 'min:0'],
             'payment.transaction_id'        => [
                 'nullable',
@@ -303,93 +297,86 @@ class OrderController extends Controller
     // ---------------- ITEMS ----------------
 
     private function buildItemsSafe(array $items): array
-    {
-        $payload = [];
-        $subtotal = 0.0;
+{
+    $payload = [];
+    $subtotal = 0.0;
 
-        // Handle both id and product_id
-        $items = array_map(function ($it) {
-            if (empty($it['product_id']) && !empty($it['id'])) {
-                $it['product_id'] = $it['id'];
-            }
+    // ✅ API support: if frontend sends items[].id instead of items[].product_id
+    $items = array_map(function ($it) {
+        if (empty($it['product_id']) && !empty($it['id'])) {
+            $it['product_id'] = $it['id'];
+        }
+        return $it;
+    }, $items);
 
-            // ✅ normalize variantId (camelCase) -> variant_id (snake_case)
-            if (!isset($it['variant_id']) && isset($it['variantId'])) {
-                $it['variant_id'] = $it['variantId'];
-            }
+    $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
+    $products   = Product::whereIn('id', $productIds)->get()->keyBy('id');
 
-            return $it;
-        }, $items);
+    // ✅ collect variants
+    $variantIds = collect($items)->pluck('variant_id')->filter()->unique()->values();
+    $variants   = ProductVariant::whereIn('id', $variantIds)->get()->keyBy('id');
 
-        $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
-        $products   = Product::whereIn('id', $productIds)->get()->keyBy('id');
+    foreach ($items as $it) {
+        $pid = !empty($it['product_id']) ? (int)$it['product_id'] : null;
+        $vid = !empty($it['variant_id']) ? (int)$it['variant_id'] : null;
 
-        // Get variant IDs from items
-        $variantIds = collect($items)->pluck('variant_id')->filter()->unique()->values();
-        $variants   = ProductVariant::whereIn('id', $variantIds)->get()->keyBy('id');
+        $p = $pid ? $products->get($pid) : null;
 
-        foreach ($items as $it) {
-            $pid = !empty($it['product_id']) ? (int)$it['product_id'] : null;
-
-            // IMPORTANT: Get variant_id directly from the item
-            $vid = isset($it['variant_id']) && $it['variant_id'] !== null
-                ? (int)$it['variant_id']
-                : null;
-
-            $p = $pid ? $products->get($pid) : null;
-
-            // If product missing, set pid to null
-            if ($pid && !$p) {
-                $pid = null;
-            }
-
-            // Check if variant exists and belongs to product
-            $v = $vid ? $variants->get($vid) : null;
-            if ($vid && (!$v || ($pid && (int)$v->product_id !== (int)$pid))) {
-                // Variant invalid - set to null
-                $vid = null;
-                $v = null;
-            }
-
-            $qty   = max(1, (int)($it['qty'] ?? 1));
-            $price = (float)($it['price'] ?? 0);
-
-            // Get name and sku
-            $name = $p?->name ?? ($it['product_name'] ?? '');
-            $sku  = $it['sku'] ?? ($p?->sku ?? null);
-
-            if ($v) {
-                if (!empty($v->sku)) $sku = $v->sku;
-                if (!empty($v->name)) {
-                    $name = $name . ' - ' . $v->name;
-                } elseif (!empty($v->value)) {
-                    $name = $name . ' - ' . $v->value;
-                }
-            }
-
-            $line = $qty * $price;
-            $subtotal += $line;
-
-            // Build the row
-            $row = [
-                'product_id'   => $pid,
-                'product_name' => $name,
-                'sku'          => $sku,
-                'qty'          => $qty,
-                'price'        => $price,
-                'line_total'   => $line,
-            ];
-
-            // ✅ ALWAYS add variant_id if it exists in the order_items table
-            if (Schema::hasColumn('order_items', 'variant_id')) {
-                $row['variant_id'] = $vid;  // This will be null if no variant
-            }
-
-            $payload[] = $row;
+        // if product missing => treat as manual item
+        if ($pid && !$p) {
+            $pid = null;
         }
 
-        return [round($subtotal, 2), $payload];
+        // ✅ variant check: must exist + must belong to the product
+        $v = $vid ? $variants->get($vid) : null;
+        if ($vid && (!$v || ($pid && (int)$v->product_id !== (int)$pid))) {
+            // variant invalid or not belongs to selected product => ignore
+            $vid = null;
+            $v = null;
+        }
+
+        $qty   = max(1, (int)($it['qty'] ?? 1));
+        $price = (float)($it['price'] ?? 0);
+
+        // ✅ optional: override name/sku using variant if exists
+        // (adjust depending on your ProductVariant columns)
+        $name = $p?->name ?? ($it['product_name'] ?? '');
+        $sku  = $p?->sku  ?? ($it['sku'] ?? null);
+
+        if ($v) {
+            // if your variant has sku/value/name columns, use them
+            if (!empty($v->sku)) $sku = $v->sku;
+
+            // Example: show variant label like "Shirt - S"
+            if (!empty($v->name)) {
+                $name = $name . ' - ' . $v->name;
+            } elseif (!empty($v->value)) {
+                $name = $name . ' - ' . $v->value;
+            }
+        }
+
+        $line = $qty * $price;
+        $subtotal += $line;
+
+        $row = [
+            'product_id'   => $pid,
+            'product_name' => $name,
+            'sku'          => $sku,
+            'qty'          => $qty,
+            'price'        => $price,
+            'line_total'   => $line,
+        ];
+
+        // ✅ store variant_id if column exists
+        if (Schema::hasColumn('order_items', 'variant_id')) {
+            $row['variant_id'] = $vid;
+        }
+
+        $payload[] = $row;
     }
+
+    return [round($subtotal, 2), $payload];
+}
 
     // ---------------- STOCK ----------------
 
@@ -494,7 +481,6 @@ class OrderController extends Controller
 
     private function calcPaymentStatus(string $method, float $paid, float $due): string
     {
-        if ($method === 'cash_received') return 'paid';
         if ($method === 'cod') return 'pending';
         if ($paid <= 0 && $due > 0) return 'unpaid';
         if ($due <= 0.00001 && $paid > 0) return 'paid';
@@ -595,12 +581,7 @@ class OrderController extends Controller
 
             if ($couponId) Coupon::where('id', $couponId)->increment('used_count');
 
-            $order->load([
-                'customer',
-                'payment',
-                'items.product',
-                'items.variant',
-            ]);
+            $order->load(['customer', 'items', 'payment', 'taxRate']);
 
             return response()->json([
                 'success' => true,
@@ -612,13 +593,7 @@ class OrderController extends Controller
 
     public function apiGetOrderById($id)
     {
-        $order = Order::with([
-            'customer',
-            'payment',
-            'items.product',
-            'items.variant',
-        ])->find($id);
-
+        $order = Order::with(['customer', 'items', 'payment'])->find($id);
         if (!$order) {
             return response()->json([
                 'success' => false,
@@ -628,67 +603,7 @@ class OrderController extends Controller
 
         return response()->json([
             'success' => true,
-            'order' => [
-                'id' => $order->id,
-                'order_number' => $order->order_number,
-                'customer_id' => $order->customer_id,
-                'status' => $order->status,
-                'subtotal' => (float)$order->subtotal,
-                'shipping' => (float)($order->shipping ?? 0),
-                'tax_amount' => (float)($order->tax_amount ?? 0),
-                'discount' => (float)($order->discount ?? 0),
-                'total' => (float)$order->total,
-                'billing_address' => $order->billing_address,
-                'shipping_address' => $order->shipping_address,
-                'note' => $order->note ?? null,
-                'created_at' => $order->created_at,
-                'updated_at' => $order->updated_at,
-
-                'items' => $order->items->map(function ($it) {
-                    return [
-                        'id' => $it->id,
-                        'product_id' => $it->product_id,
-                        'variant_id' => Schema::hasColumn('order_items', 'variant_id') ? ($it->variant_id ?? null) : null,
-                        'product_name' => $it->product_name,
-                        'sku' => $it->sku,
-                        'qty' => (int)$it->qty,
-                        'price' => (float)$it->price,
-                        'line_total' => (float)$it->line_total,
-
-                        // ✅ include variant object
-                        'variant' => $it->variant ? [
-                            'id' => $it->variant->id,
-                            'product_id' => $it->variant->product_id,
-                            'sku' => $it->variant->sku ?? null,
-                            'regular_price' => isset($it->variant->regular_price) ? (float)$it->variant->regular_price : null,
-                            'sale_price' => isset($it->variant->sale_price) ? (float)$it->variant->sale_price : null,
-                            'stock' => isset($it->variant->stock) ? (int)$it->variant->stock : null,
-                            'attributes' => $it->variant->attributes ?? null,
-
-                            // ✅ add a human readable label
-                            'label' => is_array($it->variant->attributes)
-                                ? collect($it->variant->attributes)->map(fn($v, $k) => "{$k}: {$v}")->implode(', ')
-                                : null,
-                        ] : null,
-
-                        // ✅ include product object (optional)
-                        'product' => $it->product ? [
-                            'id' => $it->product->id,
-                            'name' => $it->product->name,
-                            'sku' => $it->product->sku,
-                        ] : null,
-                    ];
-                })->values(),
-
-                'payment' => $order->payment ? [
-                    'id' => $order->payment->id,
-                    'method' => $order->payment->method,
-                    'status' => $order->payment->status,
-                    'transaction_id' => $order->payment->transaction_id,
-                    'amount_paid' => (float)$order->payment->amount_paid,
-                    'amount_due' => (float)$order->payment->amount_due,
-                ] : null,
-            ]
+            'order' => $this->transformOrderForApi($order),
         ]);
     }
 
@@ -788,7 +703,7 @@ class OrderController extends Controller
             'payment_method'  => $order->payment_method ?? null,
             'payment_status'  => $order->payment_status ?? null,
             'billing_address' => $order->billing_address,
-            'shipping_address' => $order->shipping_address,
+            'shipping_address'=> $order->shipping_address,
             'note'            => $order->note ?? null,
             'created_at'      => $order->created_at,
             'updated_at'      => $order->updated_at,

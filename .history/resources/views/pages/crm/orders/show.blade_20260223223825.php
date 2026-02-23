@@ -57,7 +57,6 @@
         <thead>
           <tr class="text-left text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">
             <th class="py-2 pr-3">Product</th>
-            <th class="py-2 pr-3">Variant</th>
             <th class="py-2 pr-3">SKU</th>
             <th class="py-2 pr-3">Qty</th>
             <th class="py-2 pr-3">Price</th>
@@ -67,113 +66,58 @@
         <tbody>
           @foreach($order->items as $it)
           <tr class="border-t border-slate-100 dark:border-slate-800">
+            <td class="py-2 pr-3 font-semibold">{{ $it->product_name }}</td>
+            <td class="py-2 pr-3 text-slate-500 dark:text-slate-400">{{ $it->sku ?? '—' }}</td>
+            <td class="py-2 pr-3">{{ $it->qty }}</td>
+            <td class="py-2 pr-3">{{ number_format($it->price,2) }}</td>
+            <td class="py-2 pr-3 font-semibold">{{ number_format($it->line_total,2) }}</td>
+            <td class="py-2 pr-3">
+              <div class="font-semibold">
+                {{ $it->variant?->name ?? $it->product?->name ?? $it->product_name }}
+              </div>
 
-            {{-- Product Name --}}
-            <td class="py-2 pr-3 font-semibold">
-              {{ $it->product?->name ?? $it->product_name }}
-            </td>
-
-            {{-- Variant --}}
-            <td class="py-2 pr-3 text-slate-600 dark:text-slate-300">
-              @if($it->variant)
-              @php
-              $attrs = is_array($it->variant->attributes)
-              ? $it->variant->attributes
-              : json_decode($it->variant->attributes, true);
-              @endphp
-              @if($attrs)
-              {{ collect($attrs)->map(fn($v, $k) => "{$k}: {$v}")->join(', ') }}
-              @else
-              {{ $it->variant->sku ?? '—' }}
-              @endif
-              @else
-              —
+              @if($it->variant?->options)
+              <div class="text-xs text-slate-500 dark:text-slate-400">
+                {{ is_array($it->variant->options)
+          ? implode(' • ', $it->variant->options)
+          : $it->variant->options }}
+              </div>
               @endif
             </td>
-
-            {{-- SKU --}}
-            <td class="py-2 pr-3 text-slate-500 dark:text-slate-400">
-              {{ $it->sku ?? $it->variant?->sku ?? '—' }}
-            </td>
-
-            {{-- Qty --}}
-            <td class="py-2 pr-3">
-              {{ $it->qty }}
-            </td>
-
-            {{-- Price --}}
-            <td class="py-2 pr-3">
-              {{ number_format($it->price,2) }}
-            </td>
-
-            {{-- Line Total --}}
-            <td class="py-2 pr-3 font-semibold">
-              {{ number_format($it->line_total,2) }}
-            </td>
-
           </tr>
+
           @endforeach
         </tbody>
       </table>
     </div>
 
     @php
-  $couponCode = $order->coupon_code ?? $order->coupon?->code ?? null;
-  $couponDiscount = (float)($order->coupon_discount ?? 0);
-  $discount = (float)($order->discount ?? 0);
-  $discountAmount = $couponDiscount > 0 ? $couponDiscount : $discount;
+    $paid = (float)($order->payment?->amount_paid ?? 0);
+    $due = (float)($order->payment?->amount_due ?? max(0, $order->total - $paid));
+    @endphp
 
-  $paid = (float)($order->payment?->amount_paid ?? 0);
-  $due = max(0, (float)$order->total - $paid);
-@endphp
-
-<div class="mt-6">
-  <div class="flex flex-wrap md:flex-nowrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm dark:bg-slate-900 dark:border-slate-800">
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Subtotal</span>
-      <span class="font-semibold">{{ number_format($order->subtotal,2) }}</span>
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Subtotal</div>
+        <div class="font-semibold">{{ number_format($order->subtotal,2) }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Tax</div>
+        <div class="font-semibold">{{ number_format($order->tax_amount,2) }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Shipping</div>
+        <div class="font-semibold">{{ number_format($order->shipping,2) }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Total</div>
+        <div class="font-semibold">{{ number_format($order->total,2) }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Paid / Due</div>
+        <div class="font-semibold">{{ number_format($paid,2) }} / {{ number_format($due,2) }}</div>
+      </div>
     </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Tax</span>
-      <span class="font-semibold">{{ number_format($order->tax_amount,2) }}</span>
-    </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Shipping</span>
-      <span class="font-semibold">{{ number_format($order->shipping,2) }}</span>
-    </div>
-
-    @if($discountAmount > 0)
-    <div class="flex flex-col">
-      <span class="text-xs text-emerald-600 dark:text-emerald-400">
-        Discount {{ $couponCode ? '(' . $couponCode . ')' : '' }}
-      </span>
-      <span class="font-semibold text-emerald-600 dark:text-emerald-400">
-        -{{ number_format($discountAmount,2) }}
-      </span>
-    </div>
-    @endif
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Total</span>
-      <span class="font-bold text-base">{{ number_format($order->total,2) }}</span>
-    </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Paid / Due</span>
-      <span class="font-semibold">
-        {{ number_format($paid,2) }}
-        /
-        <span class="{{ $due > 0 ? 'text-rose-600' : 'text-emerald-600' }}">
-          {{ number_format($due,2) }}
-        </span>
-      </span>
-    </div>
-
-  </div>
-</div>
 
     <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
       <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
@@ -192,7 +136,7 @@
       <div class="whitespace-pre-line">{{ $order->note }}</div>
     </div>
     @endif
-
   </div>
+
 </div>
 @endsection

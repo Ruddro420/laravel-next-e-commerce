@@ -117,7 +117,7 @@
       </table>
     </div>
 
-    @php
+   @php
   $couponCode = $order->coupon_code ?? $order->coupon?->code ?? null;
   $couponDiscount = (float)($order->coupon_discount ?? 0);
   $discount = (float)($order->discount ?? 0);
@@ -127,53 +127,28 @@
   $due = max(0, (float)$order->total - $paid);
 @endphp
 
-<div class="mt-6">
-  <div class="flex flex-wrap md:flex-nowrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm dark:bg-slate-900 dark:border-slate-800">
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Subtotal</span>
-      <span class="font-semibold">{{ number_format($order->subtotal,2) }}</span>
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Subtotal</div>
+        <div class="font-semibold">{{ number_format($order->subtotal,2) }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Tax</div>
+        <div class="font-semibold">{{ number_format($order->tax_amount,2) }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Shipping</div>
+        <div class="font-semibold">{{ number_format($order->shipping,2) }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Total</div>
+        <div class="font-semibold">{{ number_format($order->total,2) }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="text-xs text-slate-500 dark:text-slate-400">Paid / Due</div>
+        <div class="font-semibold">{{ number_format($paid,2) }} / {{ number_format($due,2) }}</div>
+      </div>
     </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Tax</span>
-      <span class="font-semibold">{{ number_format($order->tax_amount,2) }}</span>
-    </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Shipping</span>
-      <span class="font-semibold">{{ number_format($order->shipping,2) }}</span>
-    </div>
-
-    @if($discountAmount > 0)
-    <div class="flex flex-col">
-      <span class="text-xs text-emerald-600 dark:text-emerald-400">
-        Discount {{ $couponCode ? '(' . $couponCode . ')' : '' }}
-      </span>
-      <span class="font-semibold text-emerald-600 dark:text-emerald-400">
-        -{{ number_format($discountAmount,2) }}
-      </span>
-    </div>
-    @endif
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Total</span>
-      <span class="font-bold text-base">{{ number_format($order->total,2) }}</span>
-    </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Paid / Due</span>
-      <span class="font-semibold">
-        {{ number_format($paid,2) }}
-        /
-        <span class="{{ $due > 0 ? 'text-rose-600' : 'text-emerald-600' }}">
-          {{ number_format($due,2) }}
-        </span>
-      </span>
-    </div>
-
-  </div>
-</div>
 
     <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
       <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">

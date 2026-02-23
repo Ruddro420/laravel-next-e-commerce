@@ -118,62 +118,71 @@
     </div>
 
     @php
-  $couponCode = $order->coupon_code ?? $order->coupon?->code ?? null;
-  $couponDiscount = (float)($order->coupon_discount ?? 0);
-  $discount = (float)($order->discount ?? 0);
-  $discountAmount = $couponDiscount > 0 ? $couponDiscount : $discount;
+    $couponCode = $order->coupon_code ?? $order->coupon?->code ?? null;
+    $couponDiscount = (float)($order->coupon_discount ?? 0);
+    $discount = (float)($order->discount ?? 0);
+    $discountAmount = $couponDiscount > 0 ? $couponDiscount : $discount;
 
-  $paid = (float)($order->payment?->amount_paid ?? 0);
-  $due = max(0, (float)$order->total - $paid);
-@endphp
+    $paid = (float)($order->payment?->amount_paid ?? 0);
+    $due = max(0, (float)$order->total - $paid);
+    @endphp
 
-<div class="mt-6">
-  <div class="flex flex-wrap md:flex-nowrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm dark:bg-slate-900 dark:border-slate-800">
+    <div class="mt-6 max-w-md ml-auto">
+      <div class="rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
 
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Subtotal</span>
-      <span class="font-semibold">{{ number_format($order->subtotal,2) }}</span>
+        <div class="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+
+          {{-- Subtotal --}}
+          <div class="flex justify-between px-4 py-3">
+            <span class="text-slate-600 dark:text-slate-400">Subtotal</span>
+            <span class="font-semibold">{{ number_format($order->subtotal,2) }}</span>
+          </div>
+
+          {{-- Tax --}}
+          <div class="flex justify-between px-4 py-3">
+            <span class="text-slate-600 dark:text-slate-400">Tax</span>
+            <span class="font-semibold">{{ number_format($order->tax_amount,2) }}</span>
+          </div>
+
+          {{-- Shipping --}}
+          <div class="flex justify-between px-4 py-3">
+            <span class="text-slate-600 dark:text-slate-400">Shipping</span>
+            <span class="font-semibold">{{ number_format($order->shipping,2) }}</span>
+          </div>
+
+          {{-- Discount --}}
+          @if($discountAmount > 0)
+          <div class="flex justify-between px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20">
+            <span class="text-emerald-700 dark:text-emerald-300">
+              Discount {{ $couponCode ? '(' . $couponCode . ')' : '' }}
+            </span>
+            <span class="font-semibold text-emerald-700 dark:text-emerald-300">
+              -{{ number_format($discountAmount,2) }}
+            </span>
+          </div>
+          @endif
+
+          {{-- Total --}}
+          <div class="flex justify-between px-4 py-4 text-base font-bold bg-slate-50 dark:bg-slate-800">
+            <span>Total</span>
+            <span>{{ number_format($order->total,2) }}</span>
+          </div>
+
+          {{-- Paid / Due --}}
+          <div class="flex justify-between px-4 py-4 text-sm">
+            <span>Paid / Due</span>
+            <span class="font-semibold">
+              {{ number_format($paid,2) }}
+              /
+              <span class="{{ $due > 0 ? 'text-rose-600' : 'text-emerald-600' }}">
+                {{ number_format($due,2) }}
+              </span>
+            </span>
+          </div>
+
+        </div>
+      </div>
     </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Tax</span>
-      <span class="font-semibold">{{ number_format($order->tax_amount,2) }}</span>
-    </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Shipping</span>
-      <span class="font-semibold">{{ number_format($order->shipping,2) }}</span>
-    </div>
-
-    @if($discountAmount > 0)
-    <div class="flex flex-col">
-      <span class="text-xs text-emerald-600 dark:text-emerald-400">
-        Discount {{ $couponCode ? '(' . $couponCode . ')' : '' }}
-      </span>
-      <span class="font-semibold text-emerald-600 dark:text-emerald-400">
-        -{{ number_format($discountAmount,2) }}
-      </span>
-    </div>
-    @endif
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Total</span>
-      <span class="font-bold text-base">{{ number_format($order->total,2) }}</span>
-    </div>
-
-    <div class="flex flex-col">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Paid / Due</span>
-      <span class="font-semibold">
-        {{ number_format($paid,2) }}
-        /
-        <span class="{{ $due > 0 ? 'text-rose-600' : 'text-emerald-600' }}">
-          {{ number_format($due,2) }}
-        </span>
-      </span>
-    </div>
-
-  </div>
-</div>
 
     <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
       <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">

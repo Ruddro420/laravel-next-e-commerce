@@ -283,13 +283,13 @@ class OrderController extends Controller
             'items.*.sku'           => ['nullable', 'string', 'max:120'],
             'items.*.qty'           => ['required', 'integer', 'min:1'],
             'items.*.price'         => ['required', 'numeric', 'min:0'],
-
+            
             'items.*.variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
             // OPTIONAL: if sometimes camelCase comes from frontend
             'items.*.variantId'  => ['nullable', 'integer', 'exists:product_variants,id'],
 
             'payment'                       => ['required', 'array'],
-            'payment.method' => ['required', Rule::in(['cod', 'cash_received', 'bkash', 'nagad', 'rocket'])],
+            'payment.method'                => ['required', Rule::in(['cod', 'bkash', 'nagad', 'rocket'])],
             'payment.amount_paid'           => ['nullable', 'numeric', 'min:0'],
             'payment.transaction_id'        => [
                 'nullable',
@@ -312,12 +312,6 @@ class OrderController extends Controller
             if (empty($it['product_id']) && !empty($it['id'])) {
                 $it['product_id'] = $it['id'];
             }
-
-            // ✅ normalize variantId (camelCase) -> variant_id (snake_case)
-            if (!isset($it['variant_id']) && isset($it['variantId'])) {
-                $it['variant_id'] = $it['variantId'];
-            }
-
             return $it;
         }, $items);
 
@@ -494,7 +488,6 @@ class OrderController extends Controller
 
     private function calcPaymentStatus(string $method, float $paid, float $due): string
     {
-        if ($method === 'cash_received') return 'paid';
         if ($method === 'cod') return 'pending';
         if ($paid <= 0 && $due > 0) return 'unpaid';
         if ($due <= 0.00001 && $paid > 0) return 'paid';
@@ -659,16 +652,10 @@ class OrderController extends Controller
                         'variant' => $it->variant ? [
                             'id' => $it->variant->id,
                             'product_id' => $it->variant->product_id,
+                            'name' => $it->variant->name ?? null,
                             'sku' => $it->variant->sku ?? null,
-                            'regular_price' => isset($it->variant->regular_price) ? (float)$it->variant->regular_price : null,
-                            'sale_price' => isset($it->variant->sale_price) ? (float)$it->variant->sale_price : null,
-                            'stock' => isset($it->variant->stock) ? (int)$it->variant->stock : null,
-                            'attributes' => $it->variant->attributes ?? null,
-
-                            // ✅ add a human readable label
-                            'label' => is_array($it->variant->attributes)
-                                ? collect($it->variant->attributes)->map(fn($v, $k) => "{$k}: {$v}")->implode(', ')
-                                : null,
+                            'price' => isset($it->variant->price) ? (float)$it->variant->price : null,
+                            'value' => $it->variant->value ?? null, // if you have
                         ] : null,
 
                         // ✅ include product object (optional)
